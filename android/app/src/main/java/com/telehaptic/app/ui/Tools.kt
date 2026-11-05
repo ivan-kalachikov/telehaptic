@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -196,7 +197,7 @@ fun SettingsScreen(nav: Nav) {
                 check = "Checking…"
                 app.uploader.check { r -> check = r ?: "The repository is accessible." }
             }, modifier = Modifier.fillMaxWidth()) { Text("Check access") }
-            if (check.isNotEmpty()) Text(check, color = if (check.startsWith("The repository is")) Palette.ok else Palette.warn)
+            if (check.isNotEmpty()) Text(check, color = if (check.startsWith("The repository is")) MaterialTheme.colorScheme.primary else Palette.warn)
         }
         Section("Capsule") {
             KeyValue("Remembered capsule", p.capsuleAddress.ifEmpty { "none" })

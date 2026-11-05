@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import com.telehaptic.app.core.Keys
@@ -33,7 +34,7 @@ private val FINGER = arrayOf(           // knuckle offset, then the three phalan
     floatArrayOf(4f, 42f, 27f, 20f),    // ring
     floatArrayOf(0f, 33f, 19f, 18f),    // little
 )
-private const val PALM_MM = 22f
+private const val PALM_MM = 2f
 private const val SPAN_MM = PALM_MM + 6f + 45f + 28f + 20f + 4f
 
 private class KeyBox(val key: String, val left: Float, val top: Float, val width: Float, val height: Float)
@@ -81,9 +82,6 @@ fun HandDiagram(
     Canvas(modifier.aspectRatio(1.45f).then(tapMod)) {
         val boxes = layout(size.width, size.height)
         val mm = size.width / SPAN_MM
-        // palm on the left, behind the finger roots
-        drawRoundRect(skin, Offset(0f, size.height * 0.02f), Size((PALM_MM + 10f) * mm, size.height * 0.96f), CornerRadius(14.dp.toPx()))
-        drawRoundRect(line, Offset(0f, size.height * 0.02f), Size((PALM_MM + 10f) * mm, size.height * 0.96f), CornerRadius(14.dp.toPx()), style = Stroke(width = 1.5.dp.toPx()))
         val digit = android.graphics.Paint().apply {
             isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -124,39 +122,53 @@ fun HandDiagram(
     }
 }
 
-/** Small pictogram of a hand posture or of the calibration. */
+/** Pictogram of a hand posture or of the calibration, flat two-tone style. */
 @Composable
 fun PosePicture(kind: String, modifier: Modifier = Modifier.size(72.dp)) {
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val accent = MaterialTheme.colorScheme.primary
+    val fill = accent.copy(alpha = 0.18f)
+    val bad = Palette.bad
     Canvas(modifier) {
-        val s = size.minDimension
-        val sw = s * 0.06f
+        // All drawings use a 120 x 90 box, scaled to fit and centred.
+        val k = minOf(size.width / 120f, size.height / 90f)
+        val dx = (size.width - 120f * k) / 2
+        val dy = (size.height - 90f * k) / 2
+        fun p(d: String) = androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toPath()
+        fun shape(d: String, f: Color, o: Color?, w: Float = 2f) {
+            val path = p(d)
+            withTransform({ translate(dx, dy); scale(k, k, Offset.Zero) }) {
+                drawPath(path, f)
+                if (o != null) drawPath(path, o, style = Stroke(width = w))
+            }
+        }
+        val capsule = { d: String -> shape(d, accent, null) }
         when (kind) {
-            "table" -> {
-                drawLine(ink, Offset(s * 0.05f, s * 0.78f), Offset(s * 0.95f, s * 0.78f), sw, StrokeCap.Round)   // table
-                drawLine(accent, Offset(s * 0.12f, s * 0.66f), Offset(s * 0.62f, s * 0.66f), sw * 2.2f, StrokeCap.Round) // forearm
-                drawLine(accent, Offset(s * 0.66f, s * 0.66f), Offset(s * 0.8f, s * 0.66f), sw * 2.8f, StrokeCap.Round) // hand on edge
-                drawLine(accent, Offset(s * 0.74f, s * 0.6f), Offset(s * 0.84f, s * 0.44f), sw, StrokeCap.Round)        // thumb up
+            "table", "nomagnet" -> {
+                shape("M4 66 H116 V74 H4 Z", ink.copy(alpha = 0.25f), null)                                 // table top
+                shape("M6 56 Q6 46 16 46 L66 44 Q74 44 74 52 L74 58 Q74 64 66 64 L16 66 Q6 66 6 56 Z", fill, accent)   // forearm lying on the table
+                shape("M70 64 L70 34 Q70 26 78 26 L88 26 Q96 26 96 34 L96 64 Z", fill, accent)               // hand standing on its edge
+                shape("M92 30 Q104 26 110 30 Q112 34 106 36 L94 38 Z", fill, accent)                        // thumb on top
+                shape("M96 40 Q108 40 108 50 Q108 60 96 62 Z", fill, accent)                                 // curled fingers
+                capsule("M74 36 Q74 33 77 33 L86 33 Q89 33 89 36 L89 44 Q89 47 86 47 L77 47 Q74 47 74 44 Z")   // capsule on the back of the hand
+                if (kind == "nomagnet") {
+                    shape("M98 6 A12 12 0 1 1 97.9 6 Z", Color.Transparent, bad, 3f)
+                    shape("M90 10 L106 26", Color.Transparent, bad, 3f)
+                }
             }
             "down" -> {
-                drawCircle(ink, s * 0.09f, Offset(s * 0.42f, s * 0.14f), style = Stroke(sw))
-                drawLine(ink, Offset(s * 0.42f, s * 0.24f), Offset(s * 0.42f, s * 0.7f), sw, StrokeCap.Round)          // body
-                drawLine(accent, Offset(s * 0.56f, s * 0.28f), Offset(s * 0.58f, s * 0.72f), sw * 1.8f, StrokeCap.Round) // arm
-                drawLine(accent, Offset(s * 0.58f, s * 0.74f), Offset(s * 0.58f, s * 0.88f), sw * 2.6f, StrokeCap.Round) // hand
+                shape("M60 4 A9 9 0 1 1 59.9 4 Z", fill, accent)                                              // head
+                shape("M48 24 Q48 20 52 20 L68 20 Q72 20 72 24 L72 58 L48 58 Z", fill, accent)               // torso
+                shape("M51 58 L58 58 L58 88 L51 88 Z M62 58 L69 58 L69 88 L62 88 Z", fill, accent)           // legs
+                shape("M74 22 Q80 22 80 28 L80 64 L74 64 Z", fill, accent)                                    // arm hanging down
+                shape("M73 64 L81 64 Q83 64 83 67 L83 78 Q83 82 79 82 L75 82 Q71 82 71 78 L71 67 Q71 64 73 64 Z", fill, accent)  // hand
+                capsule("M73 66 L81 66 L81 72 L73 72 Z")
             }
             "rotate" -> {
-                drawArc(accent, 20f, 280f, false, Offset(s * 0.18f, s * 0.18f), Size(s * 0.64f, s * 0.64f), style = Stroke(sw, cap = StrokeCap.Round))
-                drawLine(accent, Offset(s * 0.74f, s * 0.24f), Offset(s * 0.78f, s * 0.38f), sw, StrokeCap.Round)
-                drawLine(accent, Offset(s * 0.74f, s * 0.24f), Offset(s * 0.62f, s * 0.3f), sw, StrokeCap.Round)
-                drawCircle(ink, s * 0.08f, Offset(s * 0.5f, s * 0.5f))
-            }
-            "nomagnet" -> {
-                drawLine(ink, Offset(s * 0.05f, s * 0.78f), Offset(s * 0.95f, s * 0.78f), sw, StrokeCap.Round)
-                drawLine(accent, Offset(s * 0.12f, s * 0.66f), Offset(s * 0.62f, s * 0.66f), sw * 2.2f, StrokeCap.Round)
-                drawLine(accent, Offset(s * 0.66f, s * 0.66f), Offset(s * 0.8f, s * 0.66f), sw * 2.8f, StrokeCap.Round)
-                drawCircle(Color(0xFFC23B3B), s * 0.13f, Offset(s * 0.8f, s * 0.3f), style = Stroke(sw))
-                drawLine(Color(0xFFC23B3B), Offset(s * 0.71f, s * 0.21f), Offset(s * 0.89f, s * 0.39f), sw)
+                shape("M50 30 Q50 24 56 24 L64 24 Q70 24 70 30 L70 62 L50 62 Z", fill, accent)               // hand, back towards us
+                capsule("M54 32 L66 32 L66 42 L54 42 Z")
+                shape("M24 46 A36 30 0 1 1 30 66", Color.Transparent, accent, 3f)                              // turning arrow
+                shape("M30 66 L24 56 M30 66 L38 60", Color.Transparent, accent, 3f)
             }
         }
     }

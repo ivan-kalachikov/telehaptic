@@ -34,7 +34,7 @@ object Palette {
     val accentDark = Color(0xFF7D9BFF)
     val keyLight = Color(0xFFE08A1E)
     val keyDark = Color(0xFFF0A443)
-    val ok = Color(0xFF1F8A4C)
+    val ok = Color(0xFF22A06B)   // status dot only; success text uses the accent
     val warn = Color(0xFFB26B00)
     val bad = Color(0xFFC23B3B)
 }

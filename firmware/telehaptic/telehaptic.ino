@@ -36,23 +36,6 @@ static void clockBegin() {
 // resets the nRF52840 WDT was not checked, and the Adafruit bootloader does not feed it.
 // A running WDT could make flashing impossible.
 
-// Stall monitor: a FreeRTOS task (not the WDT peripheral, so flashing is unaffected). If the sample
-// index has not moved for 2 s, the loop is stuck, most likely in an I2C transfer that never ends
-// (the core's TWIM driver waits without a timeout). Restart; the next scan checks the bus lines
-// first and skips I2C if a line is held low, so a broken wire cannot cause a restart loop.
-static volatile bool monitorArmed = false;
-
-static void monitorTask(void*) {
-  uint32_t last = sampleIndex, stuckMs = 0;
-  for (;;) {
-    vTaskDelay(pdMS_TO_TICKS(500));
-    if (!monitorArmed) { last = sampleIndex; stuckMs = 0; continue; }
-    if (sampleIndex == last) stuckMs += 500; else stuckMs = 0;
-    last = sampleIndex;
-    if (stuckMs >= 2000) NVIC_SystemReset();   // reported after the restart as BOOT reason=software
-  }
-}
-
 static const char* resetReason() {
   uint32_t r = NRF_POWER->RESETREAS;
   NRF_POWER->RESETREAS = r;  // bits are cleared by writing 1
@@ -314,6 +297,23 @@ static void handleCommand(const Command& c, uint32_t now) {
     default:
       snprintf(line, sizeof line, "ERR unknown command 0x%02X", op);
       linkInfo(line);
+  }
+}
+
+// Stall monitor: a FreeRTOS task (not the WDT peripheral, so flashing is unaffected). If the sample
+// index has not moved for 2 s, the loop is stuck, most likely in an I2C transfer that never ends
+// (the core's TWIM driver waits without a timeout). Restart; the next scan checks the bus lines
+// first and skips I2C if a line is held low, so a broken wire cannot cause a restart loop.
+static volatile bool monitorArmed = false;
+
+static void monitorTask(void*) {
+  uint32_t last = sampleIndex, stuckMs = 0;
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(500));
+    if (!monitorArmed) { last = sampleIndex; stuckMs = 0; continue; }
+    if (sampleIndex == last) stuckMs += 500; else stuckMs = 0;
+    last = sampleIndex;
+    if (stuckMs >= 2000) NVIC_SystemReset();   // reported after the restart as BOOT reason=software
   }
 }
 

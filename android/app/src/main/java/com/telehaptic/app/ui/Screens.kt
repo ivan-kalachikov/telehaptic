@@ -197,7 +197,7 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, onShare: 
     Row(Modifier.fillMaxWidth().clickable { onShare() }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(f.nameWithoutExtension, fontSize = 13.sp, modifier = Modifier.weight(1f))
         val (text, color) = when {
-            sent || item?.state == Uploader.State.SENT -> "in the repository" to Palette.ok
+            sent || item?.state == Uploader.State.SENT -> "✓ in the repository" to MaterialTheme.colorScheme.primary
             item?.state == Uploader.State.SENDING || item?.state == Uploader.State.WAITING -> "sending…" to Palette.warn
             item?.state == Uploader.State.FAILED -> "not sent" to Palette.bad
             else -> "on the phone" to MaterialTheme.colorScheme.onSurfaceVariant
@@ -250,18 +250,36 @@ fun SetupScreen(nav: Nav, kind: Kind) {
         }
 
         if (kind != Kind.CALIBRATION) {
-            Section("Hand posture") {
-                Posture.entries.forEach { p ->
-                    Row(Modifier.fillMaxWidth().clickable { posture = p }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PosePicture(p.code, Modifier.size(48.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text(p.title, modifier = Modifier.weight(1f), fontWeight = if (p == posture) FontWeight.SemiBold else FontWeight.Normal)
-                        if (p == posture) Text("✓", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
+            Section("Where is your hand during this recording?") {
+                Muted("Choose one. Keep the hand in this position for the whole recording.")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Posture.entries.forEach { p ->
+                        val on = p == posture
+                        Surface(
+                            onClick = { posture = p },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.background,
+                            border = androidx.compose.foundation.BorderStroke(if (on) 2.dp else 1.dp,
+                                if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                PosePicture(p.code, Modifier.fillMaxWidth().height(84.dp))
+                                Spacer(Modifier.height(6.dp))
+                                Text(p.title, textAlign = TextAlign.Center, fontSize = 14.sp,
+                                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+                            }
+                        }
                     }
                 }
-                Row(Modifier.fillMaxWidth().clickable { rewear = !rewear }, verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = rewear, onCheckedChange = { rewear = it })
-                    Text("After putting the capsule on again")
+            }
+            Section {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Capsule just put on again")
+                        Muted("Turn on if you took the capsule off and put it back on before this recording.")
+                    }
+                    androidx.compose.material3.Switch(checked = rewear, onCheckedChange = { rewear = it })
                 }
             }
         }
@@ -414,7 +432,7 @@ fun DoneScreen(nav: Nav) {
             if (r.disconnects > 0) add("The capsule disconnected ${r.disconnects} time(s) during the recording.")
         }
         if (r.aborted) Muted("Stopped recordings are kept on the phone but left out of the analysis.")
-        else if (issues.isEmpty() && r.error == null) Text("Recording OK · ${minutes(r.durationS)}", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.ok)
+        else if (issues.isEmpty() && r.error == null) Text("✓ Recording OK · ${minutes(r.durationS)}", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
         issues.forEach { Text(it, color = Palette.warn) }
         if (detailed) Section {
             KeyValue("Duration", minutes(r.durationS))
@@ -432,7 +450,7 @@ fun DoneScreen(nav: Nav) {
             val sent = app.uploader.isSent(f) || item?.state == Uploader.State.SENT
             val sending = item?.state == Uploader.State.SENDING || item?.state == Uploader.State.WAITING
             when {
-                sent -> Text("Sent to the repository", color = Palette.ok)
+                sent -> Text("✓ Sent to the repository", color = MaterialTheme.colorScheme.primary)
                 sending -> Muted("Sending to the repository…")
                 item?.state == Uploader.State.FAILED -> Text(item.message, color = Palette.warn)
             }

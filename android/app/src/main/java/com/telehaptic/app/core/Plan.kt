@@ -36,8 +36,8 @@ object Keys {
 /** What a recording is. Names go into file names and meta.json. */
 enum class Kind(val code: String) { CALIBRATION("CAL"), KEYS("KEYS"), NO_MAGNET("NOMAG"), TRAIN("TRAIN"), RETRAIN("RETRAIN") }
 enum class Posture(val code: String, val title: String) {
-    TABLE("table", "Hand on the table, on its edge"),
-    DOWN("down", "Arm hanging along the body"),
+    TABLE("table", "On the table, on its edge"),
+    DOWN("down", "Hanging along the body"),
 }
 
 /** One cue of a recording, at a time from the start. */
