@@ -14,6 +14,9 @@ import com.telehaptic.app.ui.ExperimentsScreen
 import com.telehaptic.app.ui.HomeScreen
 import com.telehaptic.app.ui.RunScreen
 import com.telehaptic.app.ui.SetupScreen
+import com.telehaptic.app.ui.TrainScreen
+import com.telehaptic.app.ui.TypingScreen
+import com.telehaptic.app.core.Evaluation
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -114,5 +117,52 @@ class ScreenshotTest {
         rule.mainClock.autoAdvance = false
         rule.setContent { AppTheme { DiagnosticsScreen(nav(Screen.Home, Screen.Diagnostics)) } }
         shot("8-diagnostics")
+    }
+
+    private val trained = Brain.Summary(trained = true, date = "11 нояб., 15:40", correct = 41, total = 48,
+        confusions = listOf(Triple("2", "5", 3), Triple("6", "9", 2), Triple("#", "9", 1)), weakKeys = listOf("5", "2", "9"), touches = 48)
+
+    @Test fun homeTrained() {
+        app.capsule.showForPreview(connected)
+        app.brain.showForPreview(trained)
+        rule.mainClock.autoAdvance = false
+        rule.setContent { AppTheme { HomeScreen(nav(Screen.Home)) } }
+        shot("9-home-trained")
+    }
+
+    @Test fun trainHold() {
+        app.capsule.showForPreview(connected)
+        app.training.showForPreview(Training.Ui(phase = Training.Phase.HOLDS, key = "5", holdStep = Training.HoldStep.HOLD, index = 13, total = 24))
+        rule.mainClock.autoAdvance = false
+        rule.setContent { AppTheme { TrainScreen(nav(Screen.Home, Screen.Train), retrain = false) } }
+        shot("10-train-hold")
+    }
+
+    @Test fun trainResult() {
+        app.capsule.showForPreview(connected)
+        app.training.showForPreview(Training.Ui(phase = Training.Phase.RESULT,
+            report = Evaluation.Report(41, 48, listOf(Triple("2", "5", 3), Triple("6", "9", 2), Triple("#", "9", 1)), listOf("5", "2", "9"))))
+        rule.mainClock.autoAdvance = false
+        rule.setContent { AppTheme { TrainScreen(nav(Screen.Home, Screen.Train), retrain = false) } }
+        shot("11-train-result")
+    }
+
+    @Test fun retrainResult() {
+        app.capsule.showForPreview(connected)
+        app.training.showForPreview(Training.Ui(phase = Training.Phase.RESULT, retrain = true,
+            before = Evaluation.Report(15, 24, emptyList(), emptyList()), report = Evaluation.Report(21, 24, listOf(Triple("6", "9", 2)), listOf("9"))))
+        rule.mainClock.autoAdvance = false
+        rule.setContent { AppTheme { TrainScreen(nav(Screen.Home, Screen.Retrain), retrain = true) } }
+        shot("12-retrain-result")
+    }
+
+    @Test fun typing() {
+        app.capsule.showForPreview(connected)
+        app.brain.showForPreview(trained)
+        rule.mainClock.autoAdvance = false
+        rule.setContent { AppTheme { TypingScreen(nav(Screen.Home, Screen.Typing)) } }
+        app.typing.showForPreview(TypingController.Ui(text = "привет как дела", candidates = listOf("дела", "жела", "дел"), variant = 0,
+            lastKey = "2", flashUntil = Long.MAX_VALUE, posterior = 0.82, second = "5", secondPosterior = 0.11, ready = true))
+        shot("13-typing")
     }
 }

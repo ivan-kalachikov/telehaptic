@@ -22,6 +22,8 @@ import com.telehaptic.app.ui.LogsScreen
 import com.telehaptic.app.ui.RunScreen
 import com.telehaptic.app.ui.SettingsScreen
 import com.telehaptic.app.ui.SetupScreen
+import com.telehaptic.app.ui.TrainScreen
+import com.telehaptic.app.ui.TypingScreen
 
 sealed class Screen {
     data object Home : Screen()
@@ -32,6 +34,9 @@ sealed class Screen {
     data object Diagnostics : Screen()
     data object Settings : Screen()
     data object Logs : Screen()
+    data object Train : Screen()
+    data object Retrain : Screen()
+    data object Typing : Screen()
 }
 
 class Nav(private val stack: MutableList<Screen>) {
@@ -66,7 +71,9 @@ private fun Root(activity: MainActivity) {
     val stack = remember { mutableStateListOf<Screen>(Screen.Home) }
     val nav = remember { Nav(stack) }
     val session by app.session.ui.collectAsState()
-    val running = session.phase != Session.Phase.IDLE && session.phase != Session.Phase.DONE
+    val training by app.training.ui.collectAsState()
+    val running = (session.phase != Session.Phase.IDLE && session.phase != Session.Phase.DONE) ||
+        training.phase == Training.Phase.HOLDS || training.phase == Training.Phase.TAPS || nav.current == Screen.Typing
 
     LaunchedEffect(running) { activity.keepScreenOn(running) }
     LaunchedEffect(session.phase) {
@@ -84,5 +91,8 @@ private fun Root(activity: MainActivity) {
         Screen.Diagnostics -> DiagnosticsScreen(nav)
         Screen.Settings -> SettingsScreen(nav)
         Screen.Logs -> LogsScreen(nav)
+        Screen.Train -> TrainScreen(nav, retrain = false)
+        Screen.Retrain -> TrainScreen(nav, retrain = true)
+        Screen.Typing -> TypingScreen(nav)
     }
 }

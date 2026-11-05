@@ -38,7 +38,7 @@ class Session(private val app: App) {
     val running get() = _ui.value.phase !in listOf(Phase.IDLE, Phase.DONE)
 
     fun start(kind: Kind, posture: Posture?, rewear: Boolean, note: String) {
-        if (running) return
+        if (running || app.training.active || app.recorder.isOpen) return
         val plan = PlanSettings()
         val seed = Random.nextLong()
         val seq = if (kind == Kind.CALIBRATION) emptyList() else Keys.sequence(plan.blocks, Random(seed))

@@ -239,7 +239,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         m.put("kind", s.kind.code)
         m.put("posture", s.posture?.code ?: JSONObject.NULL)
         m.put("rewear", s.rewear)
-        m.put("magnet", if (s.kind == Kind.KEYS) s.magnet else "none")
+        m.put("magnet", if (s.kind == Kind.CALIBRATION || s.kind == Kind.NO_MAGNET) "none" else s.magnet)
         m.put("magnet_selected", s.magnet)
         m.put("sensor_distance_mm", if (s.distanceMm > 0) s.distanceMm else JSONObject.NULL)
         m.put("note", s.note)

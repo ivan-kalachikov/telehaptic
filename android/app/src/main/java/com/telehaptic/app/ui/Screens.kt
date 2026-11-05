@@ -110,10 +110,7 @@ fun HomeScreen(nav: Nav) {
             else -> {}
         }
 
-        Section("Обучение") {
-            Muted("Появится в следующей сборке. Сейчас доступны эксперименты для первой серии записей: меню ⋮ → Эксперименты.")
-        }
-        Section("Набор") { Muted("Появится после обучения.") }
+        LearnCards(nav)
 
         if (ui.status.linked || ui.status == Capsule.Status.RECONNECTING || ui.status == Capsule.Status.CONNECTING) {
             TextButton(onClick = { app.capsule.disconnect() }, modifier = Modifier.fillMaxWidth()) { Text("Отключить капсулу") }
@@ -223,7 +220,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
     var magnet by remember { mutableStateOf(app.prefs.magnet) }
     var distance by remember { mutableStateOf(if (app.prefs.distanceMm > 0) app.prefs.distanceMm.toString() else "") }
     var note by remember { mutableStateOf("") }
-    val title = when (kind) { Kind.CALIBRATION -> "Калибровка"; Kind.KEYS -> "Клавиши"; Kind.NO_MAGNET -> "Без магнита" }
+    val title = when (kind) { Kind.CALIBRATION -> "Калибровка"; Kind.NO_MAGNET -> "Без магнита"; else -> "Клавиши" }
 
     Page(title, nav) {
         when (kind) {
@@ -233,7 +230,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                 Text("После второго сигнала 40 с медленно вращайте кисть во все стороны, как будто осматриваете её.")
             }
             Kind.NO_MAGNET -> Section { Text("Снимите магнит с ногтя. Дальше всё как в «Клавишах»: касайтесь тех же фаланг, что и с магнитом.") }
-            Kind.KEYS -> Section {
+            else -> Section {
                 Text("Одиночный сигнал — коснитесь и держите. Двойной — отпустите и расслабьте руку.")
                 Muted("Клавишу на экране и голосом показывают заранее, во время покоя.")
             }

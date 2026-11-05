@@ -11,6 +11,10 @@ class App : Application() {
     lateinit var uploader: Uploader
     lateinit var cues: Cues
     lateinit var session: Session
+    lateinit var engine: Engine
+    lateinit var brain: Brain
+    lateinit var training: Training
+    lateinit var typing: TypingController
 
     override fun onCreate() {
         super.onCreate()
@@ -22,6 +26,11 @@ class App : Application() {
         uploader = Uploader(this, prefs, log)
         cues = Cues(this, log)
         session = Session(this)
+        engine = Engine(capsule)
+        brain = Brain(this, engine, log)
+        training = Training(this)
+        typing = TypingController(this)
+        typing.preload()
         log.i("app", "start ${BuildConfig.VERSION_NAME}, Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
     }
 
