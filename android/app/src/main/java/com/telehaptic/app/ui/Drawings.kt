@@ -122,53 +122,71 @@ fun HandDiagram(
     }
 }
 
-/** Pictogram of a hand posture or of the calibration, flat two-tone style. */
+/** Line illustration of a hand posture or of the calibration (160 x 110 box, drawn to fit). */
 @Composable
 fun PosePicture(kind: String, modifier: Modifier = Modifier.size(72.dp)) {
-    val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val accent = MaterialTheme.colorScheme.primary
-    val fill = accent.copy(alpha = 0.18f)
+    val fill = accent.copy(alpha = 0.10f)
+    val ground = MaterialTheme.colorScheme.onSurfaceVariant
+    val magnet = keyColor()
     val bad = Palette.bad
     Canvas(modifier) {
-        // All drawings use a 120 x 90 box, scaled to fit and centred.
-        val k = minOf(size.width / 120f, size.height / 90f)
-        val dx = (size.width - 120f * k) / 2
-        val dy = (size.height - 90f * k) / 2
-        fun p(d: String) = androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toPath()
-        fun shape(d: String, f: Color, o: Color?, w: Float = 2f) {
-            val path = p(d)
-            withTransform({ translate(dx, dy); scale(k, k, Offset.Zero) }) {
-                drawPath(path, f)
-                if (o != null) drawPath(path, o, style = Stroke(width = w))
-            }
-        }
-        val capsule = { d: String -> shape(d, accent, null) }
-        when (kind) {
-            "table", "nomagnet" -> {
-                shape("M4 66 H116 V74 H4 Z", ink.copy(alpha = 0.25f), null)                                 // table top
-                shape("M6 56 Q6 46 16 46 L66 44 Q74 44 74 52 L74 58 Q74 64 66 64 L16 66 Q6 66 6 56 Z", fill, accent)   // forearm lying on the table
-                shape("M70 64 L70 34 Q70 26 78 26 L88 26 Q96 26 96 34 L96 64 Z", fill, accent)               // hand standing on its edge
-                shape("M92 30 Q104 26 110 30 Q112 34 106 36 L94 38 Z", fill, accent)                        // thumb on top
-                shape("M96 40 Q108 40 108 50 Q108 60 96 62 Z", fill, accent)                                 // curled fingers
-                capsule("M74 36 Q74 33 77 33 L86 33 Q89 33 89 36 L89 44 Q89 47 86 47 L77 47 Q74 47 74 44 Z")   // capsule on the back of the hand
-                if (kind == "nomagnet") {
-                    shape("M98 6 A12 12 0 1 1 97.9 6 Z", Color.Transparent, bad, 3f)
-                    shape("M90 10 L106 26", Color.Transparent, bad, 3f)
+        val k = minOf(size.width / 160f, size.height / 110f)
+        val dx = (size.width - 160f * k) / 2
+        val dy = (size.height - 110f * k) / 2
+        fun path(d: String) = androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toPath()
+        withTransform({ translate(dx, dy); scale(k, k, Offset.Zero) }) {
+            val line = Stroke(width = 2.4f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+            val thin = Stroke(width = 1.4f, cap = StrokeCap.Round)
+            fun body(d: String) { val q = path(d); drawPath(q, fill); drawPath(q, accent, style = line) }
+            fun stroke(d: String, c: Color, st: Stroke) = drawPath(path(d), c, style = st)
+            fun box(x: Float, y: Float, w: Float, h: Float, r: Float, c: Color) = drawRoundRect(c, Offset(x, y), Size(w, h), CornerRadius(r))
+            when (kind) {
+                "table", "nomagnet" -> {
+                    stroke("M4 93 H156", ground.copy(alpha = 0.55f), line)
+                    stroke("M10 99 H150", ground.copy(alpha = 0.25f), thin)
+                    body("M6 92 L6 74 C24 70 46 69 60 70 C68 68 74 60 82 54 C86 51 90 50 94 51 " +
+                        "C97 44 103 38 110 37 C116 36 119 40 116 44 C113 48 106 50 103 54 " +
+                        "L128 56 C135 56 138 60 135 64 L132 65 C138 66 139 71 134 73 L131 74 " +
+                        "C137 75 137 80 132 82 L128 83 C133 85 132 90 126 90 L96 92 Z")
+                    stroke("M104 64 L131 65 M104 73 L130 74 M102 82 L127 83", accent.copy(alpha = 0.5f), thin)
+                    stroke("M60 71 C62 78 62 86 60 92", accent.copy(alpha = 0.4f), thin)
+                    box(70f, 62f, 22f, 16f, 4f, accent)                                   // capsule
+                    if (kind == "table") {
+                        withTransform({ rotate(-20f, Offset(112f, 40.5f)) }) { box(109f, 38.5f, 6f, 4f, 1.2f, magnet) }
+                    } else {
+                        drawCircle(bad, 9f, Offset(128f, 22f), style = Stroke(width = 2.4f))
+                        stroke("M121.6 15.6 L134.4 28.4", bad, Stroke(width = 2.4f, cap = StrokeCap.Round))
+                    }
                 }
-            }
-            "down" -> {
-                shape("M60 4 A9 9 0 1 1 59.9 4 Z", fill, accent)                                              // head
-                shape("M48 24 Q48 20 52 20 L68 20 Q72 20 72 24 L72 58 L48 58 Z", fill, accent)               // torso
-                shape("M51 58 L58 58 L58 88 L51 88 Z M62 58 L69 58 L69 88 L62 88 Z", fill, accent)           // legs
-                shape("M74 22 Q80 22 80 28 L80 64 L74 64 Z", fill, accent)                                    // arm hanging down
-                shape("M73 64 L81 64 Q83 64 83 67 L83 78 Q83 82 79 82 L75 82 Q71 82 71 78 L71 67 Q71 64 73 64 Z", fill, accent)  // hand
-                capsule("M73 66 L81 66 L81 72 L73 72 Z")
-            }
-            "rotate" -> {
-                shape("M50 30 Q50 24 56 24 L64 24 Q70 24 70 30 L70 62 L50 62 Z", fill, accent)               // hand, back towards us
-                capsule("M54 32 L66 32 L66 42 L54 42 Z")
-                shape("M24 46 A36 30 0 1 1 30 66", Color.Transparent, accent, 3f)                              // turning arrow
-                shape("M30 66 L24 56 M30 66 L38 60", Color.Transparent, accent, 3f)
+                "down" -> {
+                    drawCircle(fill, 10f, Offset(80f, 15f)); drawCircle(accent, 10f, Offset(80f, 15f), style = line)
+                    body("M60 36 C52 36 47 41 47 49 L46 80 C46 83 48 84 50 84 L56 84 C58 84 59 83 59 80 L61 52")
+                    body("M100 36 C108 36 113 41 113 49 L114 80 C114 83 112 84 110 84 L104 84 C102 84 101 83 101 80 L99 52")
+                    body("M60 108 L60 50 C60 38 67 31 80 31 C93 31 100 38 100 50 L100 108")
+                    body("M47 84 C44 90 45 98 50 101 C55 103 59 99 59 93 L59 84")
+                    body("M101 84 L101 93 C101 99 105 103 110 101 C115 98 116 90 113 84")
+                    box(102.5f, 86f, 10f, 8f, 2f, accent)
+                }
+                "rotate" -> {
+                    body("M62 92 L62 36 C62 32 70 32 70 36 L70 48 L71 30 C71 26 79 26 79 30 L79 48 L80 32 C80 28 88 28 88 32 " +
+                        "L88 50 L89 40 C89 36 97 36 97 40 L97 66 C101 60 107 58 109 61 C111 64 106 70 101 78 C98 84 95 88 92 92 Z")
+                    box(68f, 56f, 22f, 15f, 3.5f, accent)
+                    val c = Offset(80f, 59f); val r = 46f
+                    val start = -50f; val sweep = 300f
+                    drawArc(accent, start, sweep, false, Offset(c.x - r, c.y - r), Size(2 * r, 2 * r), style = Stroke(width = 2.6f, cap = StrokeCap.Round))
+                    val a = Math.toRadians((start + sweep).toDouble())
+                    val n = Offset(kotlin.math.cos(a).toFloat(), kotlin.math.sin(a).toFloat())
+                    val t = Offset(-n.y, n.x)
+                    val e = c + n * r
+                    val head = androidx.compose.ui.graphics.Path().apply {
+                        moveTo((e + t * 9f).x, (e + t * 9f).y)
+                        lineTo((e + n * 6f - t * 2f).x, (e + n * 6f - t * 2f).y)
+                        lineTo((e - n * 6f - t * 2f).x, (e - n * 6f - t * 2f).y)
+                        close()
+                    }
+                    drawPath(head, accent)
+                }
             }
         }
     }

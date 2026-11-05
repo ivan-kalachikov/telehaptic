@@ -212,7 +212,7 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, onShare: 
 private fun ExperimentCard(picture: String, title: String, text: String, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            PosePicture(picture, Modifier.size(64.dp))
+            PosePicture(picture, Modifier.width(88.dp).height(62.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -348,7 +348,7 @@ fun RunScreen(nav: Nav) {
                 else -> "" to ""
             }
             Spacer(Modifier.height(24.dp))
-            PosePicture("rotate", Modifier.size(120.dp).align(Alignment.CenterHorizontally))
+            PosePicture("rotate", Modifier.width(200.dp).height(138.dp).align(Alignment.CenterHorizontally))
             Text(big, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             if (small.isNotEmpty()) Text(small, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             if (s.phase != Session.Phase.SAVING) Text("$left s", fontSize = 40.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
