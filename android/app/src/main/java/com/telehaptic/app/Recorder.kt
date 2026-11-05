@@ -94,6 +94,17 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
 
     init {
         capsule.addListener(this)
+        // A recording cut off by a killed app leaves its folder behind: keep it as a stopped recording.
+        io.execute {
+            File(ctx.filesDir, "rec").listFiles()?.filter { it.isDirectory }?.forEach { d ->
+                try {
+                    val z = File(dir, d.name + "_ABORTED.zip")
+                    if (!z.exists()) zip(d, z)
+                    d.deleteRecursively()
+                    log.w("rec", "interrupted recording ${d.name} kept as ${z.name}")
+                } catch (e: Exception) { log.w("rec", "interrupted ${d.name}", e) }
+            }
+        }
     }
 
     @Volatile private var starting = false

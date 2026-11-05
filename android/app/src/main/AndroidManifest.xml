@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Sending recordings to the GitHub repository. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Phone vibration when the capsule is lost while the person is not looking. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".App"

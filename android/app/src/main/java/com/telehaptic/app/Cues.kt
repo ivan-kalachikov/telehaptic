@@ -27,6 +27,14 @@ class Cues(ctx: Context, private val log: AppLog) {
     fun release() { tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 250) }
     fun end() { tone?.startTone(ToneGenerator.TONE_PROP_ACK, 400) }
 
+    private val vibrator = ctx.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+
+    /** Something changed that the person, not looking at the phone, must notice: phone vibration and speech. */
+    fun alert(text: String) {
+        try { vibrator?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 120, 80, 120), -1)) } catch (_: Exception) {}
+        say(text)
+    }
+
     fun say(text: String) {
         if (ttsStatus == "ok") tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "cue")
     }

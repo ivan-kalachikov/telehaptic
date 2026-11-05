@@ -117,7 +117,7 @@ The app says what is wrong. What to do for each message:
 
 After fixing the wiring, tap "Rescan the sensors" in Diagnostics. No need to restart the board.
 
-If Diagnostics shows "last start: restarted after sampling stalled", sampling stopped for 2 s and the board restarted itself. Usually a loose I2C wire; check the wiring of the channel that was lost.
+If Diagnostics shows "last start: restarted by software" without a fresh flash, sampling probably stopped for 2 s and the stall monitor restarted the board. Usually a loose I2C wire; check the wiring of the channel that was lost.
 
 ## 7. First series of recordings
 

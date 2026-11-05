@@ -339,7 +339,9 @@ void setup() {
   snprintf(line, sizeof line, "BOOT reason=%s", reason);
   linkInfo(line);
   bootReason = reason;
-  if (clockNow() == 0) linkInfo("CLOCK FAIL rtc2 not counting");
+  delay(2);
+  bool clockOk = clockNow() != 0;
+  if (!clockOk) linkInfo("CLOCK FAIL rtc2 not counting");
   rescan();
   imuOk = imuBegin();
   linkInfo(imuOk ? "IMU ok LSM6DS3TR-C" : "IMU FAIL");
@@ -353,7 +355,7 @@ void setup() {
   nextLive = now + TICKS_PER_S / 2;
   restartSchedule(now);
   xTaskCreate(monitorTask, "monitor", 256, NULL, TASK_PRIO_NORMAL, NULL);
-  monitorArmed = true;
+  monitorArmed = clockOk;   // without a clock there are no samples; restarting would not help
 }
 
 void loop() {
@@ -361,7 +363,9 @@ void loop() {
 
   Command c;
   bool handled = false;
-  while (linkTakeCommand(c)) { handleCommand(c, clockNow()); handled = true; }
+  // One command per pass, so a burst of slow commands (rescans) never starves sampling long
+  // enough to trip the stall monitor.
+  if (linkTakeCommand(c)) { handleCommand(c, clockNow()); handled = true; }
   if (linkTakeHello()) { emitStatus(); handled = true; }
   if (handled) now = clockNow();  // rescan / range / averaging block for 100-250 ms
 

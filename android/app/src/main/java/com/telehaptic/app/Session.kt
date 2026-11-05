@@ -29,9 +29,33 @@ class Session(private val app: App) {
         val totalMs: Long = 0,
         val id: String = "",
         val result: RecordingResult? = null,
+        val note: String = "",          // why the recording ended early, in plain words
     )
 
     private val main = Handler(Looper.getMainLooper())
+
+    init {
+        // Capsule lost while recording: warn at once; if it is not back in 5 s, stop, the rest would be lost anyway.
+        app.capsule.addListener(object : Capsule.Listener {
+            override fun onLink(connected: Boolean) {
+                main.post {
+                    if (!running) return@post
+                    if (connected) { main.removeCallbacks(lostCheck); app.cues.say("Capsule connected"); return@post }
+                    app.cues.alert("Capsule disconnected")
+                    main.removeCallbacks(lostCheck)
+                    main.postDelayed(lostCheck, 5000)
+                }
+            }
+        })
+    }
+
+    private val lostCheck = Runnable {
+        if (running && !app.capsule.ui.value.status.let { it == Capsule.Status.CONNECTED || it == Capsule.Status.NO_DATA }) {
+            app.recorder.event("abort", _ui.value.trial, "link lost")
+            _ui.value = _ui.value.copy(note = "Stopped: the capsule was lost for more than 5 seconds. Record again when it is connected.")
+            finish(aborted = true)
+        }
+    }
     private val token = Any()
     private val _ui = MutableStateFlow(Ui())
     val ui: StateFlow<Ui> = _ui
@@ -113,6 +137,7 @@ class Session(private val app: App) {
 
     private fun finish(aborted: Boolean) {
         main.removeCallbacksAndMessages(token)
+        main.removeCallbacks(lostCheck)
         _ui.value = _ui.value.copy(phase = Phase.SAVING, key = "", nextKey = "")
         app.recorder.finish(aborted) { r ->
             _ui.value = _ui.value.copy(phase = Phase.DONE, result = r)

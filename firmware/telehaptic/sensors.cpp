@@ -168,10 +168,22 @@ static void scanOne(uint8_t ch, void (*emit)(const char*), bool hintIfEmpty) {
 // Both lines must idle high (pull-ups). A line held low would make the TWIM driver,
 // which waits for bus events without a timeout, hang on the first transfer.
 static bool busIdleHigh(char* line, size_t len) {
-  pinMode(PIN_WIRE_SDA, INPUT);
-  pinMode(PIN_WIRE_SCL, INPUT);
+  // Weak internal pull-ups, so lines with nothing connected do not float low.
+  pinMode(PIN_WIRE_SDA, INPUT_PULLUP);
+  pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
   delayMicroseconds(50);
   int sda = digitalRead(PIN_WIRE_SDA), scl = digitalRead(PIN_WIRE_SCL);
+  if (sda == LOW && scl == HIGH) {
+    // A slave stuck mid-byte holds SDA: clock SCL up to 9 times until it lets go (standard I2C recovery).
+    for (int i = 0; i < 9 && digitalRead(PIN_WIRE_SDA) == LOW; i++) {
+      pinMode(PIN_WIRE_SCL, OUTPUT);
+      digitalWrite(PIN_WIRE_SCL, LOW);
+      delayMicroseconds(5);
+      pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
+      delayMicroseconds(5);
+    }
+    sda = digitalRead(PIN_WIRE_SDA);
+  }
   Wire.begin();  // gives the pins back to the I2C peripheral
   Wire.setClock(I2C_HZ);
   snprintf(line, len, "SCAN BUS_STUCK sda=%d scl=%d", sda, scl);

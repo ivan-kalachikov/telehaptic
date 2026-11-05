@@ -320,14 +320,17 @@ def calibration(rec, figdir):
     half = n // 2
     out = {"rec": rec["id"], "n": n}
     cal = []
+    # One field magnitude for both sensors: separate scales would leave a gain mismatch that
+    # shows up in the difference as Earth field.
+    common_radius = float(np.mean([sphere_fit(p[:half])[1] for p in P]))
     for i, p in enumerate(P):
         fit = ellipsoid_fit(p[:half])
         if fit is None:
             c, r = sphere_fit(p[:half])
             fit = (c, np.eye(3) / r)
         c, A = fit                                   # (p - c) A^T lies on a unit sphere
-        _, radius = sphere_fit(p[:half])             # field magnitude in uT for the scale
-        cp = (p - c) @ A.T * radius
+        _, radius = sphere_fit(p[:half])             # this sensor's own estimate, reported
+        cp = (p - c) @ A.T * common_radius
         mod = np.linalg.norm(cp[half:], axis=1)
         out[f"m{i + 1}_offset"] = c
         out[f"m{i + 1}_radius"] = radius
@@ -392,7 +395,14 @@ def motor_effect(rec):
                      "noise during a pulse, µT (SD)": float(np.linalg.norm(np.std(m[on], axis=0))),
                      "recovery after a pulse, s (median)": float(np.median(rec_times)) if rec_times else np.nan,
                      "pulses": len(ends)})
-    return {"rec": rec["id"], "rows": rows}
+    # The same for the IMU: the motor shakes the capsule, which the accelerometer and gyroscope feel.
+    acc = hp_accel(rec, mask_motor=False)[w]
+    gyr = np.linalg.norm(rec["gyr"][w] - np.median(rec["gyr"][w][far], axis=0), axis=1)
+    imu = []
+    for name, v, unit in (("accelerometer, high-passed", acc, "m/s²"), ("gyroscope", gyr, "°/s")):
+        imu.append({"sensor": name, "unit": unit, "RMS at rest": float(np.sqrt(np.mean(v[far] ** 2))),
+                    "RMS during a pulse": float(np.sqrt(np.mean(v[on] ** 2)))})
+    return {"rec": rec["id"], "rows": rows, "imu": imu}
 
 
 # ---------------------------------------------------------------- accelerometer at the touch
@@ -406,7 +416,7 @@ def accel_at_touch(rec):
     t, A = rec["t"], rec["acc"]
     k = max(3, int(round(0.04 * len(t) / max(1e-9, t[-1] - t[0]))))
     hp = A - np.column_stack([np.convolve(A[:, i], np.ones(k) / k, "same") for i in range(3)])
-    e = np.linalg.norm(hp, axis=1)
+    e = hp_accel(rec)
     sig = rec["m1"] - rec["m2"] if rec["n_mags"] >= 2 else rec["m1"]
     press = ev[ev["event"] == "press"].set_index("trial")
     release = ev[ev["event"] == "release"].set_index("trial")
@@ -425,18 +435,44 @@ def accel_at_touch(rec):
         if d < 5 or not (dd > 0.5 * d).any():
             continue
         on = t[ww][np.argmax(dd > 0.5 * d)]
-        rows.append({"key": p["key"], "on": e[window(rec, on - 0.15, on + 0.1)].max(),
-                     "hold": e[hw].max(), "rest": e[rw].max()})
+        ow = window(rec, on - 0.15, on + 0.1)
+        n = max(1, ow.stop - ow.start)
+        if not np.isfinite(e[ow]).any():
+            continue   # the motor was on at the touch
+        rows.append({"key": p["key"], "on": float(np.nanmax(e[ow])), "hold": peak_median(e, hw, n), "rest": peak_median(e, rw, n)})
     return rows
+
+
+def peak_median(e, sl, n):
+    """Median over consecutive n-sample chunks of the chunk maximum: comparable with a single
+    n-sample window, whatever the length of the slice."""
+    v = e[sl]
+    if len(v) < n:
+        return float(np.nanmax(v)) if np.isfinite(v).any() else np.nan
+    k = len(v) // n
+    with np.errstate(all="ignore"):
+        chunks = v[:k * n].reshape(k, n)
+        ok = np.isfinite(chunks).any(axis=1)
+        return float(np.median(np.nanmax(chunks[ok], axis=1))) if ok.any() else np.nan
 
 
 # ---------------------------------------------------------------- training: quick taps
 
-def hp_accel(rec):
+def hp_accel(rec, mask_motor=True):
+    """High-passed acceleration magnitude. Samples with the motor on (and 0.1 s after it) are set
+    to NaN: the motor's own vibration would otherwise pass for the jolt of a touch."""
     t, A = rec["t"], rec["acc"]
     k = max(3, int(round(0.04 * len(t) / max(1e-9, t[-1] - t[0]))))
     hp = A - np.column_stack([np.convolve(A[:, i], np.ones(k) / k, "same") for i in range(3)])
-    return np.linalg.norm(hp, axis=1)
+    e = np.linalg.norm(hp, axis=1)
+    if mask_motor:
+        motor = (rec["flags"] & (1 << 9)) != 0
+        if motor.any():
+            tail = max(1, int(round(0.1 * len(t) / max(1e-9, t[-1] - t[0]))))
+            m = np.convolve(motor.astype(float), np.ones(tail + 1), "full")[:len(motor)] > 0
+            e = e.copy()
+            e[m] = np.nan
+    return e
 
 
 def training_taps(rec):
@@ -452,7 +488,14 @@ def training_taps(rec):
     rate = len(t) / max(1e-9, t[-1] - t[0])
     acc = hp_accel(rec)
     # rest: before each hold press, after the previous release
-    press = ev[ev["event"] == "press"].set_index("trial")
+    presses = ev[ev["event"] == "press"]
+    det_t = ev.loc[ev["event"] == "detector", "t"]
+    hold_end = float(det_t.iloc[0]) if len(det_t) else np.inf
+    for rt in ev.loc[(ev["event"] == "repeat") & (ev["t"] < hold_end), "t"]:
+        before = presses[presses["t"] < rt]
+        if len(before):
+            presses = presses.drop(before.index[-1])
+    press = presses.set_index("trial")
     release = ev[ev["event"] == "release"].set_index("trial")
     rests, hold_acc, holds = [], [], []
     for tr, p in press.iterrows():
@@ -462,7 +505,7 @@ def training_taps(rec):
         if tr in release.index:
             hw = window(rec, p["t"] + 0.5, release.loc[tr, "t"] - 0.2)
             if hw.stop - hw.start > 3:
-                hold_acc.append(acc[hw].max())
+                hold_acc.append((acc, hw))
                 row = {"key": p["key"]}
                 for i in range(rec["n_mags"]):
                     for a, c in enumerate("xyz"):
@@ -502,6 +545,7 @@ def training_taps(rec):
                 j -= 2
                 break
             j += 1
+        j = min(j, len(t) - 1)   # the recording may end while the thumb is still down
         plateau = t[j] - t[i0]
         # rise: back from the plateau start to where the field was half way from rest
         k = i0
@@ -509,16 +553,23 @@ def training_taps(rec):
             k -= 1
         rise = t[i0] - t[k]
         contact = window(rec, t[k] - 0.05, t[i0] + 0.05)
+        n_contact = max(1, contact.stop - contact.start)
         cue = cues.loc[e["trial"], "t"] if e["trial"] in cues.index else np.nan
         rows.append({"amp": amp, "rise": rise, "plateau": plateau, "reaction": e["t"] - cue,
-                     "acc_contact": float(acc[contact].max()) if contact.stop > contact.start else np.nan})
+                     "acc_contact": float(np.nanmax(acc[contact])) if np.isfinite(acc[contact]).any() else np.nan,
+                     "n_contact": n_contact})
         trow = {"key": e["key"], "block": int(e["trial"]) // 12}
         for i in range(rec["n_mags"]):
             for a, c in enumerate("xyz"):
                 trow[f"h{i + 1}{c}"] = float(np.median(rec[f"m{i + 1}"][i0:i0 + n_win, a]))
         taps.append(trow)
-    return {"rows": pd.DataFrame(rows), "holds": pd.DataFrame(holds), "taps": pd.DataFrame(taps),
-            "hold_acc": np.array(hold_acc), "on_ut": on_ut}
+    d = pd.DataFrame(rows)
+    n = int(np.median(d["n_contact"])) if len(d) else 1
+    hold_peaks = np.array([peak_median(a, hw, n) for a, hw in hold_acc])   # same window length as at contact
+    cued = ev[ev["event"] == "tap_cue"]["trial"].nunique()
+    found = plat["trial"].nunique()
+    return {"rows": d, "holds": pd.DataFrame(holds), "taps": pd.DataFrame(taps),
+            "hold_acc": hold_peaks, "on_ut": on_ut, "cued": cued, "found": found}
 
 
 # ---------------------------------------------------------------- figures
@@ -681,7 +732,9 @@ def main():
         md.append("No calibration recording with motor pulses.")
     for m in mots:
         if "rows" in m:
-            md += [f"**{m['rec']}**, still part at the start of the calibration:", "", md_table(pd.DataFrame(m["rows"]), "{:.2f}"), ""]
+            md += [f"**{m['rec']}**, still part at the start of the calibration:", "", md_table(pd.DataFrame(m["rows"]), "{:.2f}"), "",
+                   "The motor also shakes the IMU. Samples with the motor on (and 0.1 s after) are left out of every accelerometer jolt metric below.", "",
+                   md_table(pd.DataFrame(m["imu"]), "{:.3f}"), ""]
         else:
             md.append(f"{m['rec']}: {m['note']}")
     flagged = [(r["id"], int(np.sum(r["flags"] & (1 << 9) != 0))) for r in recs if r["kind"] != "CAL"]
@@ -711,20 +764,25 @@ def main():
     if not trs:
         md.append("No training recordings yet.")
     for r in trs:
-        res = training_taps(r)
+        try:
+            res = training_taps(r)
+        except Exception as e:  # noqa: BLE001
+            md += [f"{r['id']}: could not analyse the quick taps ({e}).", ""]
+            continue
         d = res["rows"]
         if d.empty:
             md.append(f"{r['id']}: no quick taps found.")
             continue
-        q = d.quantile([0.1, 0.5, 0.9]).T
+        q = d.drop(columns=["n_contact"]).quantile([0.1, 0.5, 0.9]).T
         q.columns = ["10%", "median", "90%"]
         q.index = ["amplitude vs rest, µT (difference)", "rise to the plateau, s", "plateau length, s",
                    "cue to plateau, s", "accelerometer peak at contact, m/s²"]
-        md += [f"**{r['id']}**: {len(d)} quick taps; detector threshold on_ut = {res['on_ut']:.1f} µT.", "",
+        md += [f"**{r['id']}**: {len(d)} quick taps; detector threshold on_ut = {res['on_ut']:.1f} µT. "
+               f"Cued {res['cued']}, detected {res['found']}; cues without a detected tap (skipped or missed): {res['cued'] - res['found']}.", "",
                md_table(q.reset_index().rename(columns={"index": "per tap"}), "{:.3f}"), ""]
         if len(res["hold_acc"]):
             ha = np.median(res["hold_acc"])
-            md.append(f"Accelerometer peak during a still hold (median): {ha:.3f} m/s². "
+            md.append(f"Accelerometer peak during a still hold, same window length (median): {ha:.3f} m/s². "
                       f"Taps whose contact peak is more than twice that: {100 * np.mean(d['acc_contact'] > 2 * ha):.0f}%.")
         md.append(f"Taps weaker than the detector threshold: {int(np.sum(d['amp'] < res['on_ut']))} of {len(d)}. "
                   f"Plateaus shorter than the detector needs (window + hold, 0.12 s): {int(np.sum(d['plateau'] < 0.12))}.")

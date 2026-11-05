@@ -6,7 +6,7 @@ import kotlin.random.Random
 object Keys {
     val ALL = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#")
     private val FINGERS = listOf("index", "middle", "ring", "little")
-    private val PHALANGES = listOf("phalanx near the palm", "middle phalanx", "phalanx at the tip")
+    private val PHALANGES = listOf("segment near the palm", "middle segment", "tip segment")
 
     private val LETTERS = listOf(".", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz", "next", "space", "erase")
 

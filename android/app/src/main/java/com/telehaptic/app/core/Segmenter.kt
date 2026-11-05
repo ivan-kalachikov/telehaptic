@@ -56,6 +56,9 @@ class Segmenter(var p: Params = Params()) {
 
     fun setRate(hz: Double) { if (hz > 0) rateHz = hz }
 
+    /** Forget the rest level; the next still moment becomes rest. */
+    fun clearRest() { rest = null }
+
     /** Sets rest explicitly (training measures it). */
     fun setRest(y: DoubleArray) { rest = y.copyOf() }
 

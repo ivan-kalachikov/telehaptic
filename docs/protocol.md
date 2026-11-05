@@ -103,7 +103,7 @@ MOTOR off idx=5020 t=1643602
 PONG 123456 1650000
 ```
 
-- `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`. `software` means the stall monitor restarted the board: the sample index had not moved for 2 s (for example an I2C transfer that never ended). The monitor is a FreeRTOS task, not the WDT peripheral, so flashing is unaffected.
+- `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`. `software` means a software reset: either the stall monitor (the sample index had not moved for 2 s, for example an I2C transfer that never ended) or the reboot after flashing; RESETREAS does not tell them apart. The monitor is a FreeRTOS task, not the WDT peripheral, so flashing is unaffected.
 - `SCAN <where> …`:
   - `<where>` is `main` (the main bus) or `chN` (a multiplexer channel);
   - variants: address and chip, `UNSUPPORTED`, `UNKNOWN`, `OTHER <addresses>`, `EMPTY HINT_PULLUPS`, `MUX_ERROR`;

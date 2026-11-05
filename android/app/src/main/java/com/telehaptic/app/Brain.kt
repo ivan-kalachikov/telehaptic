@@ -71,19 +71,51 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
     }
 
     /** Retraining: old touches move by a common shift to line up with the new ones. */
-    fun retrain(session: String, new: List<Touch>): Pair<Evaluation.Report, Evaluation.Report> {
+    /** Re-fit result: kept = the new model replaced the old one. */
+    data class Refit(val before: Evaluation.Report, val after: Evaluation.Report, val kept: Boolean)
+
+    private val touchBak = File(dir, "touches.bak.csv")
+    private val modelBak = File(dir, "model.bak.json")
+    private var restBak: DoubleArray? = null
+    private var summaryBak: Summary? = null
+    val canUndo get() = touchBak.exists()
+
+    /**
+     * Re-fit with new quick taps. [full] = all keys were practised; only then the home score and
+     * the weak keys change. If the new model does worse on the new taps, the old one is kept.
+     */
+    fun retrain(session: String, new: List<Touch>, full: Boolean): Refit {
         val old = touches()
         val m = model
         val before = if (m != null) Evaluation.on(m, new) else Evaluation.Report(0, new.size, emptyList(), emptyList())
         val after = Evaluation.afterRetrain(old, new, features)
+        if (after.share < before.share) {
+            log.i("brain", "re-fit worse (${after.correct}/${after.total} < ${before.correct}/${before.total}), old model kept")
+            return Refit(before, after, kept = false)
+        }
+        touchFile.copyTo(touchBak, overwrite = true)
+        if (modelFile.exists()) modelFile.copyTo(modelBak, overwrite = true)
+        restBak = rest?.copyOf(); summaryBak = _summary.value
         val s = Evaluation.shift(old, new)
         val shifted = Evaluation.applyShift(old, s)
         log.i("brain", "retrain: shift ${s.joinToString { "%.1f".format(Locale.US, it) }}, before ${before.correct}/${before.total}, after ${after.correct}/${after.total}")
         writeTouches("", shifted.map { it.copy(group = it.group, source = it.source) }, append = false)
         writeTouches(session, new, append = true)
         rest = rest?.let { r -> DoubleArray(3) { i -> r[i] + if (engine.twoSensors) s[i] - s[3 + i] else s[i] } }
-        rebuild(rest, after)
-        return before to after
+        rebuild(rest, if (full) after else null)
+        return Refit(before, after, kept = true)
+    }
+
+    /** Puts back the model from before the last re-fit. Capsule thread. */
+    fun undoRetrain() {
+        if (!touchBak.exists()) return
+        touchBak.copyTo(touchFile, overwrite = true)
+        if (modelBak.exists()) modelBak.copyTo(modelFile, overwrite = true)
+        touchBak.delete(); modelBak.delete()
+        val sb = summaryBak
+        rebuild(restBak, null)
+        if (sb != null) _summary.value = sb.copy(touches = touches().size)
+        log.i("brain", "re-fit undone")
     }
 
     /** Corrections from typing, after the person confirmed them. Runs on the capsule thread like the rest of Brain. */
@@ -130,6 +162,12 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
 
     /** Applies the stored rest and thresholds to the detector (before taps or typing). Capsule thread. */
     fun armSegmenter() = engine.configure(segParams, rest)
+
+    /**
+     * Like [armSegmenter], but the rest level is measured again from the first still moment:
+     * after re-wearing, the stored one may be off by more than the detector's threshold.
+     */
+    fun armSegmenterFreshRest() = engine.configure(segParams, null)
 
     /** Thresholds as text for the recording's detector event. */
     fun detectorText(p: Segmenter.Params = segParams, r: DoubleArray? = rest): String =

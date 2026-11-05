@@ -201,12 +201,13 @@ object Evaluation {
 
     /** Retraining: leave-one-out over the new touches, with all shifted old ones always in training. */
     fun afterRetrain(old: List<Touch>, new: List<Touch>, features: FeatureSet): Report {
-        val shifted = applyShift(old, shift(old, new))
         val pairs = HashMap<Pair<String, String>, Int>()
         val wrong = HashMap<String, Int>()
         var correct = 0
         for (i in new.indices) {
-            val m = Lda.fit(shifted + new.filterIndexed { j, _ -> j != i }, features) ?: continue
+            // The left-out touch takes no part in training, the shift included.
+            val rest = new.filterIndexed { j, _ -> j != i }
+            val m = Lda.fit(applyShift(old, shift(old, rest)) + rest, features) ?: continue
             val t = new[i]
             val r = m.classify(t.x)
             if (r.key == t.key) correct++ else {

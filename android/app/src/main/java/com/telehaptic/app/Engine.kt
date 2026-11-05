@@ -48,6 +48,8 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
             head = (head + 1) % HIST
             if (size < HIST) size++
             if (mode == Mode.OFF) continue
+            // The motor's own field and shaking would disturb the plateau and the gyro gate: skip those samples.
+            if (s.motor()) continue
             val g = DoubleArray(3) { s.gyr[it] * capsule.info.gyrMdpsPerLsb / 1000.0 }
             val gyro = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
             val ev = segmenter.add(tNs[k], x.copyOf(), twoSensors, gyro) ?: continue
@@ -79,7 +81,7 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
     fun configure(p: Segmenter.Params, rest: DoubleArray?) = capsule.handler.post {
         segmenter.p = p
         segmenter.reset()
-        rest?.let { segmenter.setRest(it) }
+        if (rest != null) segmenter.setRest(rest) else segmenter.clearRest()
     }
 
     companion object {

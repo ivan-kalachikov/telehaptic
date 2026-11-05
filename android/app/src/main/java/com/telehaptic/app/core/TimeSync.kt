@@ -109,13 +109,13 @@ class StreamStats {
         packets++
         window.addLast(lastTicks to received)
         windowLost.addLast(lastTicks to lost)
-        while (window.size > 2 && lastTicks - window.first().first > 5 * 32768) window.removeFirst()
+        while (window.size > 2 && lastTicks - window.first().first > 10 * 32768) window.removeFirst()
         while (windowLost.size > 2 && lastTicks - windowLost.first().first > 10 * 32768) windowLost.removeFirst()
         if (!ok) { window.clear(); windowLost.clear() }
         return ok
     }
 
-    /** Samples per second of capsule time over the last ~5 s. */
+    /** Samples per second of capsule time over the last ~10 s (same window as the loss). */
     fun rateHz(): Double {
         if (window.size < 2) return 0.0
         val (t0, r0) = window.first()

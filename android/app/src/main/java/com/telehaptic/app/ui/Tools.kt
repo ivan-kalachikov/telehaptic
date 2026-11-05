@@ -145,7 +145,7 @@ private fun bootText(r: String) = when (r) {
     "reset_button" -> "reset button"
     "watchdog" -> "watchdog"
     "lockup" -> "CPU lockup"
-    "software" -> "restarted after sampling stalled"
+    "software" -> "restarted by software (the stall monitor, or the reboot after flashing)"
     else -> r
 }
 

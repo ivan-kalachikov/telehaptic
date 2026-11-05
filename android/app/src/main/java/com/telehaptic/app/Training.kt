@@ -36,6 +36,9 @@ class Training(private val app: App) {
         val report: Evaluation.Report? = null,
         val before: Evaluation.Report? = null,
         val error: String = "",
+        val kept: Boolean = true,        // re-fit: the new model replaced the old one
+        val canUndo: Boolean = false,
+        val full: Boolean = true,        // re-fit over all keys
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -64,8 +67,10 @@ class Training(private val app: App) {
                     if (!connected && !u.paused) {
                         pause(true)
                         _ui.value = _ui.value.copy(hint = "Capsule disconnected. Paused; tap Resume when it is back.")
+                        app.cues.alert("Capsule disconnected")
                     } else if (connected && u.paused) {
                         _ui.value = _ui.value.copy(hint = "Capsule is back. Tap Resume.")
+                        app.cues.say("Capsule connected")
                     }
                 }
             }
@@ -76,7 +81,7 @@ class Training(private val app: App) {
 
     fun startTraining() {
         if (active || app.session.running || app.recorder.isOpen) return
-        touches.clear(); restRows.clear()
+        touches.clear(); restRows.clear(); emptyHolds = 0; lastWasSkip = false
         holdSeq = Keys.sequence(2, Random.Default)
         tapSeq = Keys.sequence(2, Random.Default).toMutableList()
         _ui.value = Ui(phase = Phase.STARTING)
@@ -91,14 +96,15 @@ class Training(private val app: App) {
     fun startRetrain(keys: List<String>, reps: Int) {
         if (active || app.session.running || app.recorder.isOpen) return
         if (app.brain.model == null) { _ui.value = Ui(error = "Complete the training first."); return }
-        touches.clear()
+        touches.clear(); lastWasSkip = false
         val rnd = Random.Default
         val seq = ArrayList<String>()
         repeat(reps) { var b: List<String>; do { b = keys.shuffled(rnd) } while (seq.isNotEmpty() && keys.size > 1 && b[0] == seq.last()); seq.addAll(b) }
         tapSeq = seq
         _ui.value = Ui(phase = Phase.STARTING, retrain = true)
+        retrainFull = keys.size == Keys.ALL.size
         beginRecording(Kind.RETRAIN) {
-            app.brain.armSegmenter()
+            app.brain.armSegmenterFreshRest()
             app.recorder.event("detector", -1, app.brain.detectorText())
             startTaps(retrain = true)
         }
@@ -106,7 +112,11 @@ class Training(private val app: App) {
 
     private fun beginRecording(kind: Kind, then: () -> Unit) {
         val spec = RecordingSpec(kind, null, false, app.prefs.magnet, app.prefs.distanceMm, "", 0, emptyList(), TIMING)
-        val ok = app.recorder.start(spec) { id -> session = id; app.recorder.event("start"); then() }
+        val ok = app.recorder.start(spec) { id ->
+            if (_ui.value.phase != Phase.STARTING) return@start          // cancelled meanwhile
+            if (!app.recorder.isOpen) { fail("Could not start the recording. Details in Logs."); return@start }
+            session = id; app.recorder.event("start"); then()
+        }
         if (!ok) _ui.value = Ui(error = "Another recording is still running. Finish it first.")
     }
 
@@ -121,6 +131,7 @@ class Training(private val app: App) {
         app.recorder.event("announce", i, k)
         app.cues.sayKey(k)
         main.postAtTime({
+            if (_ui.value.paused || _ui.value.phase != Phase.HOLDS) { holdTrial(i); return@postAtTime }   // paused before the press: redo this key
             val press = SystemClock.elapsedRealtimeNanos()
             app.recorder.event("press", i, k)
             app.cues.press()
@@ -131,8 +142,12 @@ class Training(private val app: App) {
                 app.cues.release()
                 _ui.value = _ui.value.copy(holdStep = HoldStep.REST)
                 app.engine.windowMedian(press + 500_000_000L, release - 200_000_000L) { x ->
-                    if (x != null) touches.add(Touch(k, x, "hold${i / 12}", "hold"))
-                    else _ui.value = _ui.value.copy(hint = "No data from the capsule for this touch.")
+                    if (x != null) { touches.add(Touch(k, x, "hold${i / 12}", "hold")); emptyHolds = 0 }
+                    else if (++emptyHolds >= 3 && !_ui.value.paused) {
+                        pause(true)
+                        _ui.value = _ui.value.copy(hint = "No data from the capsule. Paused; check Diagnostics, then tap Resume.")
+                        app.cues.alert("No data from the capsule")
+                    }
                 }
                 main.postAtTime({
                     val r0 = SystemClock.elapsedRealtimeNanos()
@@ -166,6 +181,9 @@ class Training(private val app: App) {
     }
 
     private var pendingRest: DoubleArray? = null
+    private var emptyHolds = 0
+    private var lastWasSkip = false
+    private var retrainFull = true
 
 
 
@@ -197,6 +215,7 @@ class Training(private val app: App) {
         if (u.phase != Phase.TAPS || u.paused || SystemClock.elapsedRealtime() < acceptAfter) return
         val k = tapSeq.getOrNull(tapIndex) ?: return
         touches.add(Touch(k, d.x, "tap${tapIndex / 12}", "tap"))
+        lastWasSkip = false
         app.recorder.eventAt(d.tNs, "tap_plateau", tapIndex, k)   // start of the plateau the detector found
         app.recorder.event("tap", tapIndex, k)
         app.capsule.motor(CLICK_MS)
@@ -209,6 +228,7 @@ class Training(private val app: App) {
 
     fun skip() {
         if (_ui.value.phase != Phase.TAPS) return
+        lastWasSkip = true
         tapIndex++
         if (tapIndex >= tapSeq.size) { fit(); return }
         _ui.value = _ui.value.copy(index = tapIndex, key = tapSeq[tapIndex], hint = "")
@@ -219,8 +239,9 @@ class Training(private val app: App) {
     fun repeatLast() {
         val u = _ui.value
         when (u.phase) {
-            Phase.TAPS -> if (tapIndex > 0 && touches.lastOrNull()?.source == "tap") {
-                touches.removeAt(touches.size - 1)
+            Phase.TAPS -> if (tapIndex > 0 && (lastWasSkip || touches.lastOrNull()?.source == "tap")) {
+                if (!lastWasSkip) touches.removeAt(touches.size - 1)   // after a skip there is no tap to take back
+                lastWasSkip = false
                 tapIndex--
                 app.recorder.event("repeat", tapIndex, tapSeq[tapIndex])
                 _ui.value = u.copy(index = tapIndex, key = tapSeq[tapIndex], hint = "")
@@ -260,16 +281,20 @@ class Training(private val app: App) {
         app.engine.post {   // Brain is used on the capsule thread only
             var before: Evaluation.Report? = null
             var after: Evaluation.Report? = null
+            var kept = true
             try {
-                if (retrain) { val (b, a) = app.brain.retrain(sess, list); before = b; after = a }
-                else after = app.brain.train(sess, list, pendingRest)
+                if (retrain) {
+                    val r = app.brain.retrain(sess, list, retrainFull)
+                    before = r.before; after = r.after; kept = r.kept
+                } else after = app.brain.train(sess, list, pendingRest)
             } catch (e: Exception) {
                 app.log.w("train", "fit", e)
             }
             main.post {
                 app.recorder.finish(false) { r -> if (r.file != null && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file) }
                 if (after == null) fail("Could not train the model. Details in Logs.")
-                else _ui.value = _ui.value.copy(phase = Phase.RESULT, before = before, report = after)
+                else _ui.value = _ui.value.copy(phase = Phase.RESULT, before = before, report = after, kept = kept,
+                    canUndo = retrain && kept, full = !retrain || retrainFull)
             }
         }
     }
@@ -293,6 +318,12 @@ class Training(private val app: App) {
     }
 
     fun close() { if (!active) _ui.value = Ui() }
+
+    /** Puts back the model from before the re-fit. */
+    fun undo() {
+        app.engine.post { app.brain.undoRetrain() }
+        _ui.value = _ui.value.copy(canUndo = false, kept = false)
+    }
 
     /** For screenshots only. */
     fun showForPreview(u: Ui) { _ui.value = u }

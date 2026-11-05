@@ -101,8 +101,8 @@ class CoreTest {
             for (i in 1 until s.size) assertFalse("repeat at $i", s[i] == s[i - 1])
         }
         assertEquals("little", Keys.finger("#"))
-        assertEquals("phalanx at the tip", Keys.phalanx("#"))
-        assertEquals("phalanx near the palm", Keys.phalanx("4"))
+        assertEquals("tip segment", Keys.phalanx("#"))
+        assertEquals("segment near the palm", Keys.phalanx("4"))
     }
 
     @Test fun plans() {

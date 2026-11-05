@@ -24,9 +24,21 @@ class TypingController(private val app: App) {
         val rejected: Int = 0,
         val corrections: Int = 0,
         val ready: Boolean = false,
+        val dictError: Boolean = false,
     )
 
     @Volatile private var t9: T9? = null
+    @Volatile private var dictFailed = false
+    @Volatile private var active = false
+
+    init {
+        app.capsule.addListener(object : Capsule.Listener {
+            override fun onLink(connected: Boolean) {
+                if (!active) return
+                if (connected) app.cues.say("Capsule connected") else app.cues.alert("Capsule disconnected")
+            }
+        })
+    }
     private var typing: Typing? = null
     private val _ui = MutableStateFlow(Ui())
     val ui: StateFlow<Ui> = _ui
@@ -41,8 +53,11 @@ class TypingController(private val app: App) {
                 val dict = T9(T9.parse(app.assets.open("en_words.txt").bufferedReader().lineSequence()))
                 t9 = dict
                 app.log.i("t9", "dictionary loaded")
+                publish()
             } catch (e: Exception) {
                 app.log.w("t9", "dictionary", e)
+                dictFailed = true
+                publish()
             }
         }.start()
     }
@@ -50,13 +65,15 @@ class TypingController(private val app: App) {
     fun start() {
         val d = t9
         if (typing == null && d != null) typing = Typing(d)
-        app.brain.armSegmenter()
+        app.brain.armSegmenterFreshRest()   // rest is measured again: the capsule may sit differently now
+        active = true
         app.engine.onTouch = { onTouch(it) }
         app.engine.mode = Engine.Mode.TYPING
         publish()
     }
 
     fun stop() {
+        active = false
         if (app.engine.mode == Engine.Mode.TYPING) app.engine.mode = Engine.Mode.OFF
         app.engine.onTouch = null
     }
@@ -117,6 +134,7 @@ class TypingController(private val app: App) {
             variant = t?.variant ?: 0,
             corrections = corrections.size,
             ready = t9 != null,
+            dictError = dictFailed,
         )
     }
 

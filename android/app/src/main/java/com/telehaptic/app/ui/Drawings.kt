@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.telehaptic.app.core.Keys
 
 enum class Mark { NONE, NEXT, HOLD, RECOGNIZED }
@@ -28,28 +30,20 @@ enum class Mark { NONE, NEXT, HOLD, RECOGNIZED }
  * the phalanx near the palm on the left. The keys then sit as on a phone keypad. Phalanx lengths
  * follow a typical hand (mm, palm to tip); fingers start at a staggered knuckle line.
  */
-private val FINGER = arrayOf(           // knuckle offset, then the three phalanx lengths, mm
-    floatArrayOf(4f, 40f, 24f, 19f),    // index
-    floatArrayOf(6f, 45f, 28f, 20f),    // middle
-    floatArrayOf(4f, 42f, 27f, 20f),    // ring
-    floatArrayOf(0f, 33f, 19f, 18f),    // little
-)
-private const val PALM_MM = 2f
-private const val SPAN_MM = PALM_MM + 6f + 45f + 28f + 20f + 4f
+// Columns line up like a phone keypad; the phalanx near the palm is the longest.
+private val COLS = floatArrayOf(0.40f, 0.32f, 0.28f)
 
 private class KeyBox(val key: String, val left: Float, val top: Float, val width: Float, val height: Float)
 
 private fun layout(w: Float, h: Float): List<KeyBox> {
-    val mm = w / SPAN_MM
     val rowH = h / 4f
     val out = ArrayList<KeyBox>()
     for (f in 0 until 4) {
-        val g = FINGER[f]
-        val thick = rowH * if (f == 3) 0.78f else 0.86f
+        val thick = rowH * 0.84f
         val top = f * rowH + (rowH - thick) / 2
-        var x = (PALM_MM + g[0]) * mm
+        var x = 0f
         for (c in 0 until 3) {
-            val len = g[1 + c] * mm
+            val len = w * COLS[c]
             out.add(KeyBox(Keys.ALL[f * 3 + c], x, top, len, thick))
             x += len
         }
@@ -79,9 +73,10 @@ fun HandDiagram(
                 ?.let { onKey(it.key) }
         }
     }
-    Canvas(modifier.aspectRatio(1.45f).then(tapMod)) {
+    Canvas(modifier.aspectRatio(1.6f).then(tapMod).semantics {
+        contentDescription = "Keypad on the four fingers" + if (key.isNotEmpty() && mark != Mark.NONE) ", key $key highlighted" else ""
+    }) {
         val boxes = layout(size.width, size.height)
-        val mm = size.width / SPAN_MM
         val digit = android.graphics.Paint().apply {
             isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD

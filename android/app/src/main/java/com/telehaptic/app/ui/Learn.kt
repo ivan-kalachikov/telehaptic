@@ -120,43 +120,34 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
             Training.Phase.IDLE -> if (retrain) RetrainIntro(sum.weakKeys, nav) else TrainIntro(nav)
             Training.Phase.STARTING -> CircularProgressIndicator()
             Training.Phase.HOLDS, Training.Phase.TAPS -> {
-                if (!cap.status.linked) Text("Capsule disconnected. Reconnecting…", color = Palette.bad)
+                // One message about the link: the paused hint if there is one, else a short line.
+                if (u.hint.isNotEmpty()) Text(u.hint, color = Palette.warn)
+                else if (!cap.status.linked) Text("Capsule disconnected. Reconnecting…", color = Palette.bad)
                 val part = when {
                     u.retrain -> "Quick taps"
                     u.phase == Training.Phase.HOLDS -> "Part 1 of 2 · touches with a hold"
                     else -> "Part 2 of 2 · quick taps"
                 }
-                Muted("$part · ${minOf(u.index + 1, u.total)} of ${u.total}")
-                LinearProgressIndicator(progress = { if (u.total > 0) u.index.toFloat() / u.total else 0f }, modifier = Modifier.fillMaxWidth())
-                Text(
-                    when {
+                val holding = u.phase == Training.Phase.TAPS || u.holdStep == Training.HoldStep.HOLD
+                CueBlock(
+                    progressText = "$part · ${minOf(u.index + 1, u.total)} of ${u.total}",
+                    fraction = if (u.total > 0) u.index.toFloat() / u.total else 0f,
+                    action = when {
                         u.paused -> "Paused"
                         u.phase == Training.Phase.TAPS -> "Touch and release"
                         u.holdStep == Training.HoldStep.HOLD -> "Hold"
                         u.holdStep == Training.HoldStep.REST -> "Release"
                         else -> "Get ready"
-                    }, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                    },
+                    key = u.key, holding = holding,
+                    recognized = u.phase == Training.Phase.TAPS && now < u.flashUntil,
                 )
-                val mark = when {
-                    u.phase == Training.Phase.TAPS && now < u.flashUntil -> Mark.RECOGNIZED
-                    u.phase == Training.Phase.HOLDS && u.holdStep == Training.HoldStep.HOLD -> Mark.HOLD
-                    else -> Mark.NEXT
-                }
-                HandDiagram(u.key, mark, Modifier.fillMaxWidth(0.9f).align(Alignment.CenterHorizontally))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(u.key.ifEmpty { "·" }, fontSize = 52.sp, fontWeight = FontWeight.Bold, color = keyColor())
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        if (u.key.isNotEmpty()) { Text(Keys.finger(u.key) + " finger", fontWeight = FontWeight.SemiBold); Muted(Keys.phalanx(u.key)) }
-                    }
-                }
-                if (u.hint.isNotEmpty()) Text(u.hint, color = Palette.warn)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { app.training.pause(!u.paused) }) { Text(if (u.paused) "Resume" else "Pause") }
                     OutlinedButton(onClick = { app.training.repeatLast() }) { Text("Redo last") }
                     if (u.phase == Training.Phase.TAPS) TextButton(onClick = { app.training.skip() }) { Text("Skip") }
                 }
-                TextButton(onClick = { askCancel = true }) { Text("Stop", color = Palette.bad) }
+                OutlinedButton(onClick = { askCancel = true }, modifier = Modifier.fillMaxWidth()) { Text("Stop", color = Palette.bad) }
             }
             Training.Phase.FITTING -> {
                 CircularProgressIndicator()
@@ -169,7 +160,7 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
 
 /** Magnet and sensor distance: asked only when missing, otherwise one line with a way to change it. */
 @Composable
-private fun MagnetLine(nav: Nav) {
+fun MagnetLine(nav: Nav) {
     val app = App.get()
     if (app.prefs.magnet.isEmpty() || app.prefs.distanceMm <= 0) {
         Section("Before the first training") {
@@ -241,15 +232,16 @@ private fun ResultBlock(u: Training.Ui, nav: Nav, linked: Boolean) {
     if (u.before != null) {
         val was = u.before.share; val now = r.share
         Text("${f0(was * 100)}% → ${f0(now * 100)}%", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Muted("Recognised taps before and after the re-fit.")
+        Muted(if (u.full) "Recognised taps before and after the re-fit." else "Recognised taps on the practised keys, before and after.")
         if (detailed) Muted("Before: the old model on the new taps (${u.before.correct} of ${u.before.total}). After: the new model, each tap left out of its own training (${r.correct} of ${r.total}).")
-        if (now < was) Text("It got worse. Try again, touching the way you do when typing.", color = Palette.warn)
+        if (!u.kept) Text("The new taps did not help, so the previous model is kept. Try again, touching the way you do when typing.", color = Palette.warn)
+        else if (u.canUndo) TextButton(onClick = { app.training.undo() }) { Text("Undo the re-fit") }
     } else {
         Text("Recognises ${f0(r.share * 100)}% of quick taps", fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text(verdict(r.share))
         if (detailed) Muted("${r.correct} of ${r.total} quick taps the model did not see in training.")
     }
-    ConfusionList(r)
+    if (u.full) ConfusionList(r)
     val weak = r.wrongKeys.take(3)
     if (weak.isNotEmpty()) {
         Button(onClick = { app.training.close(); app.training.startRetrain(weak, 4) }, enabled = linked, modifier = Modifier.fillMaxWidth()) {
@@ -296,7 +288,7 @@ fun TypingScreen(nav: Nav) {
     if (ask) AlertDialog(
         onDismissRequest = { },   // must be answered: the corrections would be lost silently otherwise
         title = { Text("Use your corrections?") },
-        text = { Text("${u.corrections} times you erased a letter key and typed another one. Add these touches to training as the keys you meant?") },
+        text = { Text((if (u.corrections == 1) "Once" else "${u.corrections} times") + " you erased a letter key and typed another one. Add these touches to training as the keys you meant?") },
         confirmButton = { TextButton(onClick = { app.typing.applyCorrections(true); ask = false; nav.back() }) { Text("Add") } },
         dismissButton = { TextButton(onClick = { app.typing.applyCorrections(false); ask = false; nav.back() }) { Text("Discard") } },
     )
@@ -314,7 +306,8 @@ fun TypingScreen(nav: Nav) {
                 TextButton(onClick = { app.capsule.connect() }) { Text("Connect") }
             }
         }
-        if (!u.ready) Muted("Loading the dictionary…")
+        if (u.dictError) Text("The word list could not be loaded, so words are not suggested. Details in Logs.", color = Palette.warn)
+        else if (!u.ready) Muted("Loading the dictionary…")
         Section {
             Text(u.text.ifEmpty { " " }, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
         }

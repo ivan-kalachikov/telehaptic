@@ -95,7 +95,7 @@ fun Dot(color: Color) {
 
 @Composable
 fun Muted(text: String, modifier: Modifier = Modifier) {
-    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = modifier)
+    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = modifier)
 }
 
 @Composable

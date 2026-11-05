@@ -2,6 +2,7 @@
 
 package com.telehaptic.app.ui
 
+import androidx.compose.material.icons.filled.MoreVert
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
@@ -89,7 +90,9 @@ fun HomeScreen(nav: Nav) {
 
     Page("Telehaptic", nav = null, actions = {
         Box {
-            TextButton(onClick = { menu = true }) { Text("⋮", fontSize = 22.sp) }
+            androidx.compose.material3.IconButton(onClick = { menu = true }) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, contentDescription = "Menu")
+            }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Experiments") }, onClick = { menu = false; nav.go(Screen.Experiments) })
                 DropdownMenuItem(text = { Text("Diagnostics") }, onClick = { menu = false; nav.go(Screen.Diagnostics) })
@@ -98,7 +101,15 @@ fun HomeScreen(nav: Nav) {
             }
         }
     }) {
-        CapsuleCard(ui, app.prefs.detailed)
+        CapsuleCard(ui, app.prefs.detailed, onDiagnostics = { nav.go(Screen.Diagnostics) }) {
+            when (ui.status) {
+                Capsule.Status.BT_OFF -> Button(onClick = { ctx.startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }, modifier = Modifier.fillMaxWidth()) { Text("Turn on Bluetooth") }
+                Capsule.Status.IDLE, Capsule.Status.NOT_FOUND -> Button(onClick = { app.capsule.connect() }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Connect the capsule") }
+                Capsule.Status.CONNECTED, Capsule.Status.NO_DATA, Capsule.Status.RECONNECTING, Capsule.Status.CONNECTING ->
+                    TextButton(onClick = { app.capsule.disconnect() }) { Text("Disconnect", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                else -> {}
+            }
+        }
 
         when (ui.status) {
             Capsule.Status.NO_PERMISSION -> Section("Permissions") {
@@ -111,26 +122,15 @@ fun HomeScreen(nav: Nav) {
                     }, modifier = Modifier.fillMaxWidth()) { Text("Open app settings") }
                 } else Button(onClick = { askPermissions.launch(permissions) }, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
             }
-            Capsule.Status.BT_OFF -> Button(
-                onClick = { ctx.startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Turn on Bluetooth") }
-            Capsule.Status.IDLE, Capsule.Status.NOT_FOUND -> Button(
-                onClick = { app.capsule.connect() }, modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text("Connect the capsule") }
             else -> {}
         }
 
         LearnCards(nav, ui.status.linked)
-
-        if (ui.status.linked || ui.status == Capsule.Status.RECONNECTING || ui.status == Capsule.Status.CONNECTING) {
-            TextButton(onClick = { app.capsule.disconnect() }, modifier = Modifier.fillMaxWidth()) { Text("Disconnect the capsule") }
-        }
     }
 }
 
 @Composable
-fun CapsuleCard(ui: Capsule.Ui, detailed: Boolean) {
+fun CapsuleCard(ui: Capsule.Ui, detailed: Boolean, onDiagnostics: (() -> Unit)? = null, action: @Composable () -> Unit = {}) {
     Section {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Dot(statusColor(ui.status, ui.problems.isNotEmpty()))
@@ -156,6 +156,10 @@ fun CapsuleCard(ui: Capsule.Ui, detailed: Boolean) {
             } else ui.problems.forEach { Text(it, color = Palette.warn, fontSize = 14.sp) }
             if (detailed) Muted("${f0(ui.measuredHz)} Hz · loss ${f1(ui.recentLoss * 100)}% · RTT ${f0(ui.rttMs)} ms · firmware ${ui.firmware}")
         }
+        if (onDiagnostics != null && (ui.problems.isNotEmpty() || ui.status == Capsule.Status.NO_DATA)) {
+            OutlinedButton(onClick = onDiagnostics) { Text("Open Diagnostics") }
+        }
+        action()
     }
 }
 
@@ -183,9 +187,12 @@ fun ExperimentsScreen(nav: Nav) {
 
         if (files.isNotEmpty()) {
             Section("Recordings") {
-                files.take(30).forEach { f -> RecordingRow(f, items[f.name], app.uploader.isSent(f)) { share(ctx, f, "application/zip", "Send recording") } }
+                files.take(30).forEach { f -> RecordingRow(f, items[f.name], app.uploader.isSent(f), app.prefs.detailed) { share(ctx, f, "application/zip", "Send recording") } }
                 if (files.any { !app.uploader.isSent(it) && !it.name.contains("_ABORTED") }) {
-                    OutlinedButton(onClick = { app.uploader.uploadPending() }, modifier = Modifier.fillMaxWidth()) { Text("Send the rest to the repository") }
+                    if (app.prefs.githubToken.isEmpty()) {
+                        Muted("Sending to the repository needs a GitHub token.")
+                        OutlinedButton(onClick = { nav.go(Screen.Settings) }, modifier = Modifier.fillMaxWidth()) { Text("Set up sending") }
+                    } else OutlinedButton(onClick = { app.uploader.uploadPending() }, modifier = Modifier.fillMaxWidth()) { Text("Send the rest to the repository") }
                 }
             }
         }
@@ -193,9 +200,10 @@ fun ExperimentsScreen(nav: Nav) {
 }
 
 @Composable
-private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, onShare: () -> Unit) {
+private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, detailed: Boolean, onShare: () -> Unit) {
+    Column {
     Row(Modifier.fillMaxWidth().clickable { onShare() }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(f.nameWithoutExtension, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(if (detailed) f.nameWithoutExtension else readableName(f.nameWithoutExtension), fontSize = 14.sp, modifier = Modifier.weight(1f))
         val (text, color) = when {
             sent || item?.state == Uploader.State.SENT -> "✓ in the repository" to MaterialTheme.colorScheme.primary
             item?.state == Uploader.State.SENDING || item?.state == Uploader.State.WAITING -> "sending…" to Palette.warn
@@ -206,13 +214,38 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, onShare: 
         Spacer(Modifier.width(10.dp))
         Text("Share ›", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
     }
+    if (item?.state == Uploader.State.FAILED) Muted(item.message)
+    }
+}
+
+/** "KEYS_table_rewear_20261111-153012" → "Keys · table · re-worn · Nov 11, 15:30". */
+fun readableName(id: String): String {
+    val parts = id.split('_')
+    val kind = when (parts.firstOrNull()) {
+        "CAL" -> "Calibration"; "KEYS" -> "Keys"; "NOMAG" -> "No magnet"; "TRAIN" -> "Training"; "RETRAIN" -> "Re-fit"; else -> parts.firstOrNull() ?: id
+    }
+    val stamp = parts.firstOrNull { it.length == 15 && it[8] == '-' }
+    val whenText = stamp?.let {
+        try {
+            val d = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).parse(it)
+            java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(d!!)
+        } catch (_: Exception) { null }
+    }
+    val extra = buildList {
+        if ("table" in parts) add("on the table")
+        if ("down" in parts) add("along the body")
+        if ("rewear" in parts) add("re-worn")
+        if ("ABORTED" in parts) add("stopped")
+    }
+    return (listOf(kind) + extra + listOfNotNull(whenText)).joinToString(" · ")
 }
 
 @Composable
 private fun ExperimentCard(picture: String, title: String, text: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurface, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            PosePicture(picture, Modifier.width(88.dp).height(62.dp))
+            PosePicture(picture, Modifier.width(104.dp).height(72.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -230,8 +263,6 @@ fun SetupScreen(nav: Nav, kind: Kind) {
     val ui by app.capsule.ui.collectAsState()
     var posture by remember { mutableStateOf(Posture.TABLE) }
     var rewear by remember { mutableStateOf(false) }
-    var magnet by remember { mutableStateOf(app.prefs.magnet) }
-    var distance by remember { mutableStateOf(if (app.prefs.distanceMm > 0) app.prefs.distanceMm.toString() else "") }
     var note by remember { mutableStateOf("") }
     val title = when (kind) { Kind.CALIBRATION -> "Calibration"; Kind.NO_MAGNET -> "No magnet"; else -> "Keys" }
 
@@ -284,32 +315,15 @@ fun SetupScreen(nav: Nav, kind: Kind) {
             }
         }
 
-        Section("Magnet and sensors") {
-            if (kind == Kind.KEYS) {
-                Muted("Magnet on the nail")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Prefs.MAGNETS.forEach { (code, label) ->
-                        FilterChip(selected = magnet == code, onClick = { magnet = code; app.prefs.magnet = code }, label = { Text(label.substringAfter(' ')) }, colors = chipColors())
-                    }
-                }
-            }
-            OutlinedTextField(
-                value = distance,
-                onValueChange = { v -> distance = v.filter { it.isDigit() }.take(3); app.prefs.distanceMm = distance.toIntOrNull() ?: 0 },
-                label = { Text("Distance between the sensors, mm") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
-        }
+        MagnetLine(nav)
+        OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
 
         val ready = ui.status.linked && ui.mags.isNotEmpty()
         val missing = when {
             !ui.status.linked -> "Connect the capsule on the main screen."
             ui.mags.isEmpty() -> "The capsule found no magnetometers. Open Diagnostics."
-            kind == Kind.KEYS && magnet.isEmpty() -> "Choose the magnet."
-            distance.isEmpty() -> "Enter the distance between the sensors."
+            kind == Kind.KEYS && app.prefs.magnet.isEmpty() -> "Choose the magnet."
+            app.prefs.distanceMm <= 0 -> "Enter the distance between the sensors."
             else -> ""
         }
         if (ui.problems.isNotEmpty()) ui.problems.forEach { Text(it, color = Palette.warn, fontSize = 14.sp) }
@@ -337,7 +351,7 @@ fun RunScreen(nav: Nav) {
     val left = ((s.phaseEndsAt - now).coerceAtLeast(0) + 999) / 1000
 
     Page(if (s.kind == Kind.CALIBRATION) "Calibration" else "Recording", nav = null) {
-        if (!cap.status.linked) Text("Capsule link lost. Still recording, reconnecting.", color = Palette.bad)
+        if (!cap.status.linked) Text("Capsule disconnected. The recording stops if it is not back in 5 seconds.", color = Palette.bad)
 
         if (s.kind == Kind.CALIBRATION) {
             val (big, small) = when (s.phase) {
@@ -354,31 +368,19 @@ fun RunScreen(nav: Nav) {
             if (s.phase != Session.Phase.SAVING) Text("$left s", fontSize = 40.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         } else {
             val done = (s.trial + if (s.phase == Session.Phase.HOLD) 0 else 1).coerceAtLeast(0)
-            LinearProgressIndicator(progress = { if (s.trials > 0) done.toFloat() / s.trials else 0f }, modifier = Modifier.fillMaxWidth())
-            Muted(if (s.trial >= 0) "Touch ${s.trial + 1} of ${s.trials}" else "Get ready")
-            val key = if (s.phase == Session.Phase.HOLD) s.key else s.nextKey
-            val mark = when (s.phase) { Session.Phase.HOLD -> Mark.HOLD; Session.Phase.ANNOUNCE, Session.Phase.REST -> if (key.isNotEmpty()) Mark.NEXT else Mark.NONE; else -> Mark.NONE }
-            HandDiagram(key, mark, Modifier.fillMaxWidth(0.9f).align(Alignment.CenterHorizontally))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(key.ifEmpty { "·" }, fontSize = 64.sp, fontWeight = FontWeight.Bold, color = keyColor())
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    if (key.isNotEmpty()) {
-                        Text(Keys.finger(key) + " finger", fontWeight = FontWeight.SemiBold)
-                        Muted(Keys.phalanx(key))
-                    }
-                }
-            }
-            Text(
-                when (s.phase) {
+            val holding = s.phase == Session.Phase.HOLD
+            CueBlock(
+                progressText = if (s.trial >= 0) "Touch ${minOf(s.trial + if (holding) 1 else 2, s.trials)} of ${s.trials}" else "Get ready",
+                fraction = if (s.trials > 0) done.toFloat() / s.trials else 0f,
+                action = when (s.phase) {
                     Session.Phase.HOLD -> "Hold"
                     Session.Phase.REST, Session.Phase.ANNOUNCE -> "Release"
                     Session.Phase.SAVING -> "Saving…"
                     else -> "Get ready"
                 },
-                fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                key = if (holding) s.key else s.nextKey,
+                holding = holding,
             )
-            if (s.phase == Session.Phase.REST || s.phase == Session.Phase.ANNOUNCE) Muted("Next key after the beep")
         }
 
         if (s.phase == Session.Phase.SAVING) CircularProgressIndicator()
@@ -423,7 +425,9 @@ fun DoneScreen(nav: Nav) {
     val finish: () -> Unit = { app.session.reset(); nav.reset(Screen.Experiments) }
     androidx.activity.compose.BackHandler { finish() }
     val detailed = app.prefs.detailed
-    Page(if (r.aborted) "Recording stopped" else "Recording saved", nav = nav, onBack = finish) {
+    val failed = r.error != null || r.samples == 0L
+    Page(when { failed -> "Recording failed"; r.aborted -> "Recording stopped"; else -> "Recording saved" }, nav = nav, onBack = finish) {
+        if (s.note.isNotEmpty()) Text(s.note, color = Palette.warn)
         if (r.error != null) Text(r.error, color = Palette.bad)
         val issues = buildList {
             if (r.samples == 0L) add("No data. Check the capsule link and record again.")
@@ -445,7 +449,7 @@ fun DoneScreen(nav: Nav) {
         }
 
         val f = r.file
-        if (f != null && !r.aborted) {
+        if (f != null && !r.aborted && r.samples > 0) {
             val item = items[f.name]
             val sent = app.uploader.isSent(f) || item?.state == Uploader.State.SENT
             val sending = item?.state == Uploader.State.SENDING || item?.state == Uploader.State.WAITING
@@ -458,10 +462,14 @@ fun DoneScreen(nav: Nav) {
                 if (app.prefs.githubToken.isEmpty()) {
                     Muted("Sending to the repository needs a GitHub token.")
                     OutlinedButton(onClick = { nav.go(Screen.Settings) }, modifier = Modifier.fillMaxWidth()) { Text("Set up sending") }
-                } else Button(onClick = { app.uploader.upload(f) }, enabled = !sending, modifier = Modifier.fillMaxWidth()) { Text("Send to the repository") }
+                } else Button(onClick = { app.uploader.upload(f) }, enabled = !sending, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (item?.state == Uploader.State.FAILED) "Try again" else "Send to the repository")
+                }
             }
         }
         if (f != null) OutlinedButton(onClick = { share(ctx, f, "application/zip", "Send recording") }, modifier = Modifier.fillMaxWidth()) { Text("Share the file") }
+        if (r.aborted || failed) OutlinedButton(onClick = { val k = s.kind; app.session.reset(); nav.reset(Screen.Experiments); nav.go(Screen.Setup(k)) },
+            modifier = Modifier.fillMaxWidth()) { Text("Record again") }
         Button(onClick = finish, modifier = Modifier.fillMaxWidth()) { Text("Done") }
     }
 }

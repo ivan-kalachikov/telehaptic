@@ -1,5 +1,6 @@
 package com.telehaptic.app.ui
 
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -44,7 +46,9 @@ fun Page(
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    if (nav != null) TextButton(onClick = { onBack?.invoke() ?: nav.back() }) { Text("‹", fontSize = 28.sp) }
+                    if (nav != null) androidx.compose.material3.IconButton(onClick = { onBack?.invoke() ?: nav.back() }) {
+                        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
                 },
                 actions = { actions() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -72,9 +76,9 @@ fun statusTitle(s: Capsule.Status) = when (s) {
 }
 
 fun statusHint(s: Capsule.Status) = when (s) {
-    Capsule.Status.BT_OFF -> "Turn Bluetooth on in quick settings."
+    Capsule.Status.BT_OFF -> ""
     Capsule.Status.NOT_FOUND -> "Switch the capsule on, bring it close to the phone and tap Connect the capsule."
-    Capsule.Status.NO_DATA -> "Switch the capsule off and on. If that does not help, open Diagnostics and Logs."
+    Capsule.Status.NO_DATA -> "Switch the capsule off and on. If that does not help, open Diagnostics."
     Capsule.Status.RECONNECTING -> "Check that the capsule is on and nearby."
     else -> ""
 }
@@ -131,4 +135,45 @@ fun MagnetFields() {
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
         singleLine = true, modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/** Progress bar in the app's colours, without the Material stop dot. */
+@Composable
+fun Progress(fraction: Float) = androidx.compose.material3.LinearProgressIndicator(
+    progress = { fraction.coerceIn(0f, 1f) },
+    modifier = Modifier.fillMaxWidth(),
+    color = MaterialTheme.colorScheme.primary,
+    trackColor = MaterialTheme.colorScheme.outlineVariant,
+    drawStopIndicator = {},
+)
+
+/**
+ * The cue shown during a recording or a training: progress, the action in big letters, the keypad
+ * and the key. Between touches the key is labelled "Next", so it is not mistaken for the current one.
+ */
+@Composable
+fun androidx.compose.foundation.layout.ColumnScope.CueBlock(
+    progressText: String, fraction: Float, action: String, key: String, holding: Boolean, recognized: Boolean = false,
+) {
+    Muted(progressText)
+    Progress(fraction)
+    Text(action, fontSize = 30.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+    val mark = when {
+        key.isEmpty() -> Mark.NONE
+        recognized -> Mark.RECOGNIZED
+        holding -> Mark.HOLD
+        else -> Mark.NEXT
+    }
+    HandDiagram(key, mark, Modifier.fillMaxWidth(0.92f).align(androidx.compose.ui.Alignment.CenterHorizontally))
+    if (key.isNotEmpty()) androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        androidx.compose.foundation.layout.Column {
+            if (!holding) Muted("Next")
+            Text(key, fontSize = 48.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = keyColor())
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
+        androidx.compose.foundation.layout.Column {
+            Text(com.telehaptic.app.core.Keys.finger(key) + " finger", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Muted(com.telehaptic.app.core.Keys.phalanx(key))
+        }
+    }
 }
