@@ -82,6 +82,20 @@ jobs:
           name: android
           path: android/telehaptic.apk
 
+  # Smoke test of the analysis on synthetic recordings (never real data).
+  analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r analysis/requirements.txt
+      - run: |
+          python tools/make_fake_data.py /tmp/fake
+          python analysis/analyze.py /tmp/fake
+          grep -q "Поле Земли в разности" report/report.md
+
   release:
     needs: [firmware, android]
     runs-on: ubuntu-latest

@@ -8,9 +8,11 @@
 |---|---|
 | `firmware/telehaptic/` | прошивка капсулы: XIAO nRF52840 Sense, ядро «Seeed nRF52 Boards» |
 | `android/` | приложение: капсула, обучение, набор с T9, эксперименты, диагностика |
-| `analysis/` | анализ записей (ещё не написан) |
+| `analysis/` | анализ записей: `python analysis/analyze.py data` → `report/report.md` |
 | `data/` | записи |
 | `docs/protocol.md` | BLE-сервис, пакеты, команды |
+| `docs/build-day.md` | инструкция на день сборки |
+| `tools/make_fake_data.py` | синтетические записи для проверки анализа |
 
 ## Экраны приложения
 
