@@ -56,7 +56,7 @@ static uint32_t clockNow() {
 
 // ---------------------------------------------------------------- state
 static MagConfig cfg = {30, 8, 8};  // +-30 G, OSR1 = 8, OSR2 = 8
-static uint16_t rateHz = 100;
+static uint16_t rateHz = 200;  // 200 Hz: more accelerometer points at the jolt of a touch; 50 / 100 by command
 static bool imuOk = false;
 static bool configChanged = true;
 
