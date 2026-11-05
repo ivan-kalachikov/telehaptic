@@ -8,6 +8,11 @@ object Keys {
     private val FINGERS = listOf("index", "middle", "ring", "little")
     private val PHALANGES = listOf("phalanx near the palm", "middle phalanx", "phalanx at the tip")
 
+    private val LETTERS = listOf(".", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz", "next", "space", "erase")
+
+    /** What a key does in typing: its T9 letters, or its function. */
+    fun letters(key: String) = LETTERS.getOrElse(ALL.indexOf(key)) { "" }
+
     fun row(key: String) = ALL.indexOf(key) / 3
     fun col(key: String) = ALL.indexOf(key) % 3
     fun finger(key: String) = FINGERS.getOrElse(row(key)) { "" }

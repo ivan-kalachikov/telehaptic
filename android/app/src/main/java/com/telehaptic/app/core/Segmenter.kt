@@ -50,6 +50,7 @@ class Segmenter(var p: Params = Params()) {
     private val bufY = ArrayDeque<DoubleArray>()
     private val bufT = ArrayDeque<Long>()
     private var stableSince = -1L
+    private var stableRef: DoubleArray? = null   // window mean when the current still period began
     private var plateau: DoubleArray? = null
     private var emitted = false
 
@@ -60,7 +61,7 @@ class Segmenter(var p: Params = Params()) {
 
     fun reset() {
         bufX.clear(); bufY.clear(); bufT.clear()
-        state = State.REST; stableSince = -1; plateau = null; emitted = false
+        state = State.REST; stableSince = -1; stableRef = null; plateau = null; emitted = false
     }
 
     /** Projection used for the checks: sensor difference if two sensors, else sensor 1. */
@@ -90,7 +91,10 @@ class Segmenter(var p: Params = Params()) {
         lastDeviation = dev
 
         if (!stable) { stableSince = -1; return null }
-        if (stableSince < 0) stableSince = tNs
+        // A slow drift keeps each window "still" but is not a plateau: restart the still period
+        // whenever the mean has moved away from where it began.
+        val ref = stableRef
+        if (stableSince < 0 || ref == null || dist(mean, ref) > p.stableUt) { stableSince = tNs; stableRef = mean.copyOf() }
 
         when (state) {
             State.REST -> {

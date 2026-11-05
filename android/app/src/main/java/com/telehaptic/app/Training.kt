@@ -20,7 +20,7 @@ import kotlin.random.Random
  * Retraining = quick taps only, on all keys or on the keys that get confused.
  */
 class Training(private val app: App) {
-    enum class Phase { IDLE, HOLDS, TAPS, FITTING, RESULT }
+    enum class Phase { IDLE, STARTING, HOLDS, TAPS, FITTING, RESULT }
     enum class HoldStep { READY, HOLD, REST }
 
     data class Ui(
@@ -52,7 +52,25 @@ class Training(private val app: App) {
     private var lastTapAt = 0L
     private var session = ""
 
-    val active get() = _ui.value.phase == Phase.HOLDS || _ui.value.phase == Phase.TAPS
+    val active get() = _ui.value.phase.let { it == Phase.STARTING || it == Phase.HOLDS || it == Phase.TAPS }
+
+    init {
+        // Capsule lost in the middle: pause, so the next touches are not lost or blamed on the person.
+        app.capsule.addListener(object : Capsule.Listener {
+            override fun onLink(connected: Boolean) {
+                main.post {
+                    val u = _ui.value
+                    if (u.phase != Phase.HOLDS && u.phase != Phase.TAPS) return@post
+                    if (!connected && !u.paused) {
+                        pause(true)
+                        _ui.value = _ui.value.copy(hint = "Capsule disconnected. Paused; tap Resume when it is back.")
+                    } else if (connected && u.paused) {
+                        _ui.value = _ui.value.copy(hint = "Capsule is back. Tap Resume.")
+                    }
+                }
+            }
+        })
+    }
 
     // ------------------------------------------------------------ start
 
@@ -61,6 +79,7 @@ class Training(private val app: App) {
         touches.clear(); restRows.clear()
         holdSeq = Keys.sequence(2, Random.Default)
         tapSeq = Keys.sequence(2, Random.Default).toMutableList()
+        _ui.value = Ui(phase = Phase.STARTING)
         beginRecording(Kind.TRAIN) {
             _ui.value = Ui(phase = Phase.HOLDS, total = holdSeq.size)
             app.cues.say("Training. First, touches with a hold.")
@@ -77,15 +96,18 @@ class Training(private val app: App) {
         val seq = ArrayList<String>()
         repeat(reps) { var b: List<String>; do { b = keys.shuffled(rnd) } while (seq.isNotEmpty() && keys.size > 1 && b[0] == seq.last()); seq.addAll(b) }
         tapSeq = seq
+        _ui.value = Ui(phase = Phase.STARTING, retrain = true)
         beginRecording(Kind.RETRAIN) {
             app.brain.armSegmenter()
+            app.recorder.event("detector", -1, app.brain.detectorText())
             startTaps(retrain = true)
         }
     }
 
     private fun beginRecording(kind: Kind, then: () -> Unit) {
-        val spec = RecordingSpec(kind, null, false, app.prefs.magnet, app.prefs.distanceMm, "", 0, emptyList(), PlanSettings())
-        app.recorder.start(spec) { id -> session = id; app.recorder.event("start"); then() }
+        val spec = RecordingSpec(kind, null, false, app.prefs.magnet, app.prefs.distanceMm, "", 0, emptyList(), TIMING)
+        val ok = app.recorder.start(spec) { id -> session = id; app.recorder.event("start"); then() }
+        if (!ok) _ui.value = Ui(error = "Another recording is still running. Finish it first.")
     }
 
     // ------------------------------------------------------------ holds
@@ -135,9 +157,8 @@ class Training(private val app: App) {
             if (l.isEmpty()) null else app.engine.segmenter.yOf(DoubleArray(6) { i -> l.map { it.x[i] }.average() }, two)
         }
         val params = com.telehaptic.app.core.Segmenter.Params.fromTraining(restY, keyY)
-        app.engine.segmenter.p = params
-        app.engine.resetSegmenter()
-        app.engine.segmenter.setRest(restY)
+        app.engine.configure(params, restY)
+        app.recorder.event("detector", -1, app.brain.detectorText(params, restY))
         pendingRest = restY
         app.log.i("train", "holds done: ${touches.size}, onUt ${params.onUt}")
         app.cues.say("Now quick taps, at your own pace.")
@@ -145,6 +166,8 @@ class Training(private val app: App) {
     }
 
     private var pendingRest: DoubleArray? = null
+
+
 
     // ------------------------------------------------------------ taps
 
@@ -174,6 +197,7 @@ class Training(private val app: App) {
         if (u.phase != Phase.TAPS || u.paused || SystemClock.elapsedRealtime() < acceptAfter) return
         val k = tapSeq.getOrNull(tapIndex) ?: return
         touches.add(Touch(k, d.x, "tap${tapIndex / 12}", "tap"))
+        app.recorder.eventAt(d.tNs, "tap_plateau", tapIndex, k)   // start of the plateau the detector found
         app.recorder.event("tap", tapIndex, k)
         app.capsule.motor(CLICK_MS)
         tapIndex++
@@ -233,7 +257,7 @@ class Training(private val app: App) {
         app.cues.end()
         val list = touches.toList()
         val sess = session
-        Thread {
+        app.engine.post {   // Brain is used on the capsule thread only
             var before: Evaluation.Report? = null
             var after: Evaluation.Report? = null
             try {
@@ -247,7 +271,7 @@ class Training(private val app: App) {
                 if (after == null) fail("Could not train the model. Details in Logs.")
                 else _ui.value = _ui.value.copy(phase = Phase.RESULT, before = before, report = after)
             }
-        }.start()
+        }
     }
 
     private fun fail(msg: String) {
@@ -275,5 +299,7 @@ class Training(private val app: App) {
 
     companion object {
         const val CLICK_MS = 40
+        /** Holds: announce, +1 s press, 1.5 s hold, 1.5 s until the next announce (rest 2.5 s before each press). */
+        val TIMING = PlanSettings(leadMs = 2500, holdMs = 1500, restMs = 2500, blocks = 2, stillMs = 0, rotateMs = 0, motorPulses = 0)
     }
 }

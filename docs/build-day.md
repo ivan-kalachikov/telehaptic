@@ -115,7 +115,9 @@ The app says what is wrong. What to do for each message:
 | "Capsule not found" | The board is powered (USB or the switch), the phone's Bluetooth is on, the capsule is close. Press reset and tap Connect again |
 | "Connected, but no data" | Switch the capsule off and on. If that does not help: menu ⋮ → Logs → "Send to the repository" and tell me |
 
-After fixing the wiring, tap Rescan in Diagnostics. No need to restart the board.
+After fixing the wiring, tap "Rescan the sensors" in Diagnostics. No need to restart the board.
+
+If Diagnostics shows "last start: restarted after sampling stalled", sampling stopped for 2 s and the board restarted itself. Usually a loose I2C wire; check the wiring of the channel that was lost.
 
 ## 7. First series of recordings
 

@@ -430,6 +430,97 @@ def accel_at_touch(rec):
     return rows
 
 
+# ---------------------------------------------------------------- training: quick taps
+
+def hp_accel(rec):
+    t, A = rec["t"], rec["acc"]
+    k = max(3, int(round(0.04 * len(t) / max(1e-9, t[-1] - t[0]))))
+    hp = A - np.column_stack([np.convolve(A[:, i], np.ones(k) / k, "same") for i in range(3)])
+    return np.linalg.norm(hp, axis=1)
+
+
+def training_taps(rec):
+    """Quick taps of a TRAIN / RETRAIN recording.
+
+    Per tap: amplitude (plateau vs rest, sensor difference), rise time (from half way to the
+    plateau start the detector reported), plateau length (until the field leaves the plateau),
+    reaction (cue to plateau), accelerometer peak around the contact.
+    """
+    ev = rec["events"]
+    t = rec["t"]
+    y = rec["m1"] - rec["m2"] if rec["n_mags"] >= 2 else rec["m1"]
+    rate = len(t) / max(1e-9, t[-1] - t[0])
+    acc = hp_accel(rec)
+    # rest: before each hold press, after the previous release
+    press = ev[ev["event"] == "press"].set_index("trial")
+    release = ev[ev["event"] == "release"].set_index("trial")
+    rests, hold_acc, holds = [], [], []
+    for tr, p in press.iterrows():
+        rw = window(rec, p["t"] - 1.2, p["t"] - 0.15)
+        if rw.stop - rw.start > 3:
+            rests.append(np.median(y[rw], axis=0))
+        if tr in release.index:
+            hw = window(rec, p["t"] + 0.5, release.loc[tr, "t"] - 0.2)
+            if hw.stop - hw.start > 3:
+                hold_acc.append(acc[hw].max())
+                row = {"key": p["key"]}
+                for i in range(rec["n_mags"]):
+                    for a, c in enumerate("xyz"):
+                        row[f"h{i + 1}{c}"] = float(np.median(rec[f"m{i + 1}"][hw, a]))
+                holds.append(row)
+    if not rests:
+        rw = window(rec, t[0], t[0] + 2.0)
+        rests.append(np.median(y[rw], axis=0))
+    rest = np.median(np.array(rests), axis=0)
+    det = ev[ev["event"] == "detector"]
+    on_ut = np.nan
+    if len(det):
+        for part in str(det["key"].iloc[-1]).split(";"):
+            if part.startswith("on_ut="):
+                on_ut = float(part[6:])
+    plat = ev[ev["event"] == "tap_plateau"]
+    if plat.empty:
+        plat = ev[ev["event"] == "tap"]
+    # "Redo last" takes a tap back and asks for it again with the same trial number: keep the last one.
+    plat = plat.drop_duplicates("trial", keep="last")
+    cues = ev[ev["event"] == "tap_cue"].drop_duplicates("trial", keep="last").set_index("trial")
+    n_win = max(4, int(0.08 * rate))
+    rows, taps = [], []
+    for _, e in plat.iterrows():
+        i0 = int(np.searchsorted(t, e["t"]))
+        if i0 + n_win >= len(t) or i0 < int(0.6 * rate):
+            continue
+        p0 = np.median(y[i0:i0 + n_win], axis=0)
+        amp = float(np.linalg.norm(p0 - rest))
+        tol = max(2.0, 0.3 * amp)
+        # plateau end: first of 3 consecutive samples farther than tol from the plateau value
+        j = i0 + n_win
+        far = 0
+        while j < min(len(t), i0 + int(2.0 * rate)):
+            far = far + 1 if np.linalg.norm(y[j] - p0) > tol else 0
+            if far >= 3:
+                j -= 2
+                break
+            j += 1
+        plateau = t[j] - t[i0]
+        # rise: back from the plateau start to where the field was half way from rest
+        k = i0
+        while k > i0 - int(0.6 * rate) and np.linalg.norm(y[k] - rest) > 0.5 * amp:
+            k -= 1
+        rise = t[i0] - t[k]
+        contact = window(rec, t[k] - 0.05, t[i0] + 0.05)
+        cue = cues.loc[e["trial"], "t"] if e["trial"] in cues.index else np.nan
+        rows.append({"amp": amp, "rise": rise, "plateau": plateau, "reaction": e["t"] - cue,
+                     "acc_contact": float(acc[contact].max()) if contact.stop > contact.start else np.nan})
+        trow = {"key": e["key"], "block": int(e["trial"]) // 12}
+        for i in range(rec["n_mags"]):
+            for a, c in enumerate("xyz"):
+                trow[f"h{i + 1}{c}"] = float(np.median(rec[f"m{i + 1}"][i0:i0 + n_win, a]))
+        taps.append(trow)
+    return {"rows": pd.DataFrame(rows), "holds": pd.DataFrame(holds), "taps": pd.DataFrame(taps),
+            "hold_acc": np.array(hold_acc), "on_ut": on_ut}
+
+
 # ---------------------------------------------------------------- figures
 
 def plot_confusion(yt, yp, title, path):
@@ -613,6 +704,45 @@ def main():
                "But there the phone was held against the hand by the other hand and the touches were very gentle, so there is no direct comparison.", ""]
     else:
         md.append("No touches with a clear onset.")
+
+    # ---- training recordings: quick taps
+    md += ["## Quick taps in training", ""]
+    trs = [r for r in recs if r["kind"] in ("TRAIN", "RETRAIN")]
+    if not trs:
+        md.append("No training recordings yet.")
+    for r in trs:
+        res = training_taps(r)
+        d = res["rows"]
+        if d.empty:
+            md.append(f"{r['id']}: no quick taps found.")
+            continue
+        q = d.quantile([0.1, 0.5, 0.9]).T
+        q.columns = ["10%", "median", "90%"]
+        q.index = ["amplitude vs rest, µT (difference)", "rise to the plateau, s", "plateau length, s",
+                   "cue to plateau, s", "accelerometer peak at contact, m/s²"]
+        md += [f"**{r['id']}**: {len(d)} quick taps; detector threshold on_ut = {res['on_ut']:.1f} µT.", "",
+               md_table(q.reset_index().rename(columns={"index": "per tap"}), "{:.3f}"), ""]
+        if len(res["hold_acc"]):
+            ha = np.median(res["hold_acc"])
+            md.append(f"Accelerometer peak during a still hold (median): {ha:.3f} m/s². "
+                      f"Taps whose contact peak is more than twice that: {100 * np.mean(d['acc_contact'] > 2 * ha):.0f}%.")
+        md.append(f"Taps weaker than the detector threshold: {int(np.sum(d['amp'] < res['on_ut']))} of {len(d)}. "
+                  f"Plateaus shorter than the detector needs (window + hold, 0.12 s): {int(np.sum(d['plateau'] < 0.12))}.")
+        hd, tp = res["holds"], res["taps"]
+        feat = "both" if r["n_mags"] >= 2 else "s1"
+        if len(hd) >= 13 and len(tp):
+            yt, yp = scheme_transfer(hd, tp, feat, "LDA")
+            a = acc_row("", yt, yp)
+            md.append(f"LDA trained on the holds, tested on the quick taps ({FEATURES[feat]}): "
+                      f"{a['correct']} of {a['total']} ({a['accuracy, %']:.0f}%, {a['95% interval']}).")
+        if len(tp) and tp["block"].nunique() > 1:
+            yt, yp = scheme_within(tp.assign(rec=r["id"]), feat, "LDA")
+            if yt:
+                a = acc_row("", yt, yp)
+                md.append(f"LDA on the quick taps only, one block left out: {a['correct']} of {a['total']} ({a['95% interval']}).")
+            else:
+                md.append("LDA on the quick taps only: not computed, one block of 12 taps is too little to train on.")
+        md.append("")
 
     (out / "report.md").write_text("\n".join(md), encoding="utf-8")
     print(f"report: {out / 'report.md'}")

@@ -36,6 +36,23 @@ static void clockBegin() {
 // resets the nRF52840 WDT was not checked, and the Adafruit bootloader does not feed it.
 // A running WDT could make flashing impossible.
 
+// Stall monitor: a FreeRTOS task (not the WDT peripheral, so flashing is unaffected). If the sample
+// index has not moved for 2 s, the loop is stuck, most likely in an I2C transfer that never ends
+// (the core's TWIM driver waits without a timeout). Restart; the next scan checks the bus lines
+// first and skips I2C if a line is held low, so a broken wire cannot cause a restart loop.
+static volatile bool monitorArmed = false;
+
+static void monitorTask(void*) {
+  uint32_t last = sampleIndex, stuckMs = 0;
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(500));
+    if (!monitorArmed) { last = sampleIndex; stuckMs = 0; continue; }
+    if (sampleIndex == last) stuckMs += 500; else stuckMs = 0;
+    last = sampleIndex;
+    if (stuckMs >= 2000) NVIC_SystemReset();   // reported after the restart as BOOT reason=software
+  }
+}
+
 static const char* resetReason() {
   uint32_t r = NRF_POWER->RESETREAS;
   NRF_POWER->RESETREAS = r;  // bits are cleared by writing 1
@@ -60,7 +77,7 @@ static uint16_t rateHz = 200;  // 200 Hz: more accelerometer points at the jolt 
 static bool imuOk = false;
 static bool configChanged = true;
 
-static uint32_t sampleIndex = 0;
+static volatile uint32_t sampleIndex = 0;
 static uint32_t schedStart = 0, schedN = 0, nextTick = 0;
 static uint32_t overruns = 0, imuErrors = 0;
 
@@ -208,7 +225,7 @@ static void printLive() {
     pos += snprintf(line + pos, sizeof line - pos, " mag%u_uT=%ld,%ld,%ld", i + 1, x, y, z);
   }
   snprintf(line + pos, sizeof line - pos, " bat_mv=%u", batteryMv);
-  Serial.println(line);
+  serialLine(line);
 }
 
 // ---------------------------------------------------------------- schedule
@@ -310,7 +327,7 @@ void setup() {
 
   Serial.begin(115200);
   Wire.begin();
-  Wire.setClock(400000);  // TCA9548A, QMC5883P/L: up to 400 kHz
+  Wire.setClock(I2C_HZ);  // see sensors.h
 
   const char* reason = resetReason();
   linkBegin();   // starts the SoftDevice and with it the 32 kHz clock
@@ -335,14 +352,18 @@ void setup() {
   nextBattery = now + 5 * TICKS_PER_S;
   nextLive = now + TICKS_PER_S / 2;
   restartSchedule(now);
+  xTaskCreate(monitorTask, "monitor", 256, NULL, TASK_PRIO_NORMAL, NULL);
+  monitorArmed = true;
 }
 
 void loop() {
   uint32_t now = clockNow();
 
   Command c;
-  while (linkTakeCommand(c)) handleCommand(c, now);
-  if (linkTakeHello()) emitStatus();
+  bool handled = false;
+  while (linkTakeCommand(c)) { handleCommand(c, clockNow()); handled = true; }
+  if (linkTakeHello()) { emitStatus(); handled = true; }
+  if (handled) now = clockNow();  // rescan / range / averaging block for 100-250 ms
 
   if (motorOn && (int32_t)(now - motorEnd) >= 0) {
     digitalWrite(MOTOR_PIN, LOW);

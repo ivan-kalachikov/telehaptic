@@ -17,6 +17,9 @@ When the format changes, change all of them together and raise `PKT_VERSION`.
 | INFO | `7e1a0004-5c2d-4b8e-9f3a-1d6c2b8e4a10` | notify + read, UTF-8 text lines |
 
 - Device name: `Telehaptic`.
+- External I2C runs at 100 kHz for the first bring-up (multiplexer and wires across the hand); two magnetometers take about 3 ms per tick.
+- INFO lines have their own send queue, so a full DATA queue cannot drop them. The app asks for the status again if a packet's sensor count does not match the last CFG line.
+- USB Serial lines are written only when they fit in the buffer, so a terminal that does not read cannot block the firmware.
 - MTU up to 247, so up to 244 payload bytes per notification.
 - The capsule asks for a 7.5–15 ms connection interval.
 - When the phone subscribes to INFO, the capsule sends its full status (below).
@@ -100,7 +103,7 @@ MOTOR off idx=5020 t=1643602
 PONG 123456 1650000
 ```
 
-- `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`.
+- `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`. `software` means the stall monitor restarted the board: the sample index had not moved for 2 s (for example an I2C transfer that never ended). The monitor is a FreeRTOS task, not the WDT peripheral, so flashing is unaffected.
 - `SCAN <where> …`:
   - `<where>` is `main` (the main bus) or `chN` (a multiplexer channel);
   - variants: address and chip, `UNSUPPORTED`, `UNKNOWN`, `OTHER <addresses>`, `EMPTY HINT_PULLUPS`, `MUX_ERROR`;

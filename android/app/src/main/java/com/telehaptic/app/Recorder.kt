@@ -62,6 +62,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
     val dir = File(ctx.filesDir, "recordings").apply { mkdirs() }
     private val h = capsule.handler
     private val main = Handler(Looper.getMainLooper())
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private var open = false
     private var spec: RecordingSpec? = null
@@ -95,9 +96,13 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         capsule.addListener(this)
     }
 
-    val isOpen get() = open
+    @Volatile private var starting = false
+    val isOpen get() = open || starting
 
-    fun start(s: RecordingSpec, onStarted: (String) -> Unit) {
+    /** False if a recording is already open or starting. */
+    fun start(s: RecordingSpec, onStarted: (String) -> Unit): Boolean {
+        if (open || starting) return false
+        starting = true
         val now = SystemClock.elapsedRealtimeNanos()
         val date = Date()
         h.post {
@@ -123,13 +128,17 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
                 error = "Could not start the recording: $e"
                 log.w("rec", "start", e)
             }
+            starting = false
             main.post { onStarted(id) }
         }
+        return true
     }
 
     /** Time is taken at the call, the write happens on the capsule thread. */
-    fun event(name: String, trial: Int = -1, key: String = "") {
-        val t = SystemClock.elapsedRealtimeNanos()
+    fun event(name: String, trial: Int = -1, key: String = "") = eventAt(SystemClock.elapsedRealtimeNanos(), name, trial, key)
+
+    /** An event at a known phone time (e.g. the plateau start found by the detector). */
+    fun eventAt(t: Long, name: String, trial: Int = -1, key: String = "") {
         h.post {
             if (!open) return@post
             write(events, "$t,$name,$trial,$key\n")
@@ -190,24 +199,33 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         h.post {
             val s = spec
             val w = work
-            var file: File? = null
-            if (open && s != null && w != null) {
-                open = false
-                for (x in listOf(samples, events, packets, syncW, infoW)) try { x?.close() } catch (_: Exception) {}
+            val result = { f: File?, err: String? ->
+                RecordingResult(f, err, aborted, (endNs - startNs) / 1e9, count, lost, saturated, stale, i2c, disconnects)
+            }
+            if (!(open && s != null && w != null)) { val r = result(null, error); main.post { done(r) }; return@post }
+            open = false
+            for (x in listOf(samples, events, packets, syncW, infoW)) try { x?.close() } catch (_: Exception) {}
+            val metaText = try { meta(s, aborted, endNs).toString(2) } catch (e: Exception) { error = "Could not write meta.json: $e"; "{}" }
+            val r0 = result(null, error)
+            val name = id + (if (aborted) "_ABORTED" else "") + ".zip"
+            // Zipping takes a moment; keep it off the capsule thread so BLE handling never waits.
+            io.execute {
+                var file: File? = null
+                var err = r0.error
                 try {
-                    File(w, "meta.json").writeText(meta(s, aborted, endNs).toString(2))
-                    val z = File(dir, id + (if (aborted) "_ABORTED" else "") + ".zip")
+                    File(w, "meta.json").writeText(metaText)
+                    val z = File(dir, name)
                     zip(w, z)
                     w.deleteRecursively()
                     file = z
-                    log.i("rec", "saved ${z.name}, ${z.length()} bytes, samples $count, lost $lost")
+                    log.i("rec", "saved ${z.name}, ${z.length()} bytes, samples ${r0.samples}, lost ${r0.lost}")
                 } catch (e: Exception) {
-                    error = "Could not save the recording: $e"
+                    err = "Could not save the recording: $e"
                     log.w("rec", "save", e)
                 }
+                val r = r0.copy(file = file, error = err)
+                main.post { done(r) }
             }
-            val r = RecordingResult(file, error, aborted, (endNs - startNs) / 1e9, count, lost, saturated, stale, i2c, disconnects)
-            main.post { done(r) }
         }
     }
 
@@ -256,7 +274,8 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
             .put("motor_pulses", p.motorPulses).put("motor_pulse_ms", p.motorPulseMs))
         m.put("capsule_at_start", startCapsule)
         m.put("capsule_at_end", capsuleJson())
-        m.put("imu_scale", JSONObject().put("acc_mg_per_lsb", Proto.ACC_MG_PER_LSB).put("gyr_mdps_per_lsb", Proto.GYR_MDPS_PER_LSB))
+        m.put("imu_scale", JSONObject().put("acc_mg_per_lsb", capsule.info.accMgPerLsb).put("gyr_mdps_per_lsb", capsule.info.gyrMdpsPerLsb)
+            .put("from", if (capsule.info.imuScaleFromCapsule) "capsule IMU line" else "app defaults"))
         val (ready, resid, drift) = capsule.syncSnapshot()
         m.put("time_sync", JSONObject()
             .put("method", "lower envelope of (phone receive time - capsule time), 1 s bins, linear fit over 20 s; t_ns in samples.csv uses the fit current at that moment; packets.csv and sync.csv allow a refit")

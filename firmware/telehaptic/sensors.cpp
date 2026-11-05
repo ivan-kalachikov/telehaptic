@@ -173,7 +173,7 @@ static bool busIdleHigh(char* line, size_t len) {
   delayMicroseconds(50);
   int sda = digitalRead(PIN_WIRE_SDA), scl = digitalRead(PIN_WIRE_SCL);
   Wire.begin();  // gives the pins back to the I2C peripheral
-  Wire.setClock(400000);
+  Wire.setClock(I2C_HZ);
   snprintf(line, len, "SCAN BUS_STUCK sda=%d scl=%d", sda, scl);
   return sda == HIGH && scl == HIGH;
 }

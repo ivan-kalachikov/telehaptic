@@ -97,6 +97,14 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
     private var status = Status.IDLE
     private var lastDataMs = 0L
     private var scanning = false
+    // One service discovery and one setup per GATT connection, whatever callbacks arrive.
+    private var discoveryStarted = false
+    private var servicesReady = false
+    private var mtu = 23
+    private var badPackets = 0
+    private var lastStatusRequestMs = 0L
+    private var autoConnectTried = false
+    @Volatile private var notice = ""
 
     // Stream state (capsule thread only).
     val info = CapsuleInfo()
@@ -234,6 +242,9 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
     }
 
     private fun closeGatt() {
+        handler.removeCallbacks(pingRunnable)
+        discoveryStarted = false
+        servicesReady = false
         ops.clear()
         opBusySince = 0
         gatt?.let { g ->
@@ -248,8 +259,12 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         override fun onConnectionStateChange(g: BluetoothGatt, st: Int, newState: Int) {
             handler.post { onConnectionState(g, st, newState) }
         }
-        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, st: Int) {
-            handler.post { log.i("ble", "mtu $mtu status $st"); g.discoverServices() }
+        override fun onMtuChanged(g: BluetoothGatt, m: Int, st: Int) {
+            handler.post {
+                log.i("ble", "mtu $m status $st")
+                if (st == BluetoothGatt.GATT_SUCCESS) mtu = m
+                startDiscovery(g)
+            }
         }
         override fun onServicesDiscovered(g: BluetoothGatt, st: Int) {
             handler.post { onServices(g, st) }
@@ -271,12 +286,15 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         if (g !== gatt) return
         if (newState == BluetoothProfile.STATE_CONNECTED) {
             log.i("ble", "connected, status $st")
+            mtu = 23
             g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-            g.requestMtu(247)
+            if (!g.requestMtu(247)) startDiscovery(g)
+            // If the MTU answer never comes, discover anyway.
+            handler.postDelayed({ if (g === gatt) startDiscovery(g) }, 2000)
         } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
             log.i("ble", "disconnected, status $st")
             val wasUp = status == Status.CONNECTED || status == Status.NO_DATA
-            listeners.forEach { it.onLink(false) }
+            if (wasUp) listeners.forEach { it.onLink(false) }
             closeGatt()
             if (wantConnected) {
                 setStatus(Status.RECONNECTING)
@@ -288,7 +306,14 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         }
     }
 
+    private fun startDiscovery(g: BluetoothGatt) {
+        if (g !== gatt || discoveryStarted) return
+        discoveryStarted = true
+        if (!g.discoverServices()) log.w("ble", "discoverServices refused")
+    }
+
     private fun onServices(g: BluetoothGatt, st: Int) {
+        if (g !== gatt || servicesReady) return
         val svc = g.getService(UUID.fromString(Proto.SERVICE))
         if (st != BluetoothGatt.GATT_SUCCESS || svc == null) {
             log.w("ble", "service not found, status $st")
@@ -309,9 +334,13 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
                 g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothGatt.GATT_SUCCESS
             }
         }
+        servicesReady = true
+        badPackets = 0
+        notice = if (mtu < 247) "The Bluetooth link uses small packets (MTU $mtu); data may not arrive. Reconnect the capsule." else ""
         lastDataMs = SystemClock.elapsedRealtime()
         setStatus(Status.CONNECTED)
         listeners.forEach { it.onLink(true) }
+        handler.removeCallbacks(pingRunnable)
         handler.postDelayed(pingRunnable, 1000)
     }
 
@@ -346,10 +375,21 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
     }
 
     private fun onData(value: ByteArray, rx: Long) {
-        val p = PacketParser.parse(value) ?: run { log.w("ble", "bad packet ${value.size} bytes"); return }
+        val p = PacketParser.parse(value) ?: run {
+            badPackets++
+            if (badPackets == 1 || badPackets % 200 == 0) log.w("ble", "bad packet ${value.size} bytes (${badPackets} so far)")
+            if (badPackets >= 20) notice = "The capsule sends data this app version cannot read. Install the firmware and the app from the same release."
+            return
+        }
+        if (badPackets >= 20) { badPackets = 0; notice = "" }
         if (p.samples.isEmpty()) return
         lastDataMs = SystemClock.elapsedRealtime()
         if (status == Status.NO_DATA) setStatus(Status.CONNECTED)
+        // A lost CFG line would leave the sensor list out of date: ask for the status again.
+        if (p.nMags != info.mags.size && SystemClock.elapsedRealtime() - lastStatusRequestMs > 2000) {
+            lastStatusRequestMs = SystemClock.elapsedRealtime()
+            send(Proto.cmdStatus(), "status (sensor list out of date)")
+        }
         val last = p.samples.last()
         if (!stats.onPacket(p.firstIndex, p.samples.size, last.ticks)) {
             log.i("ble", "capsule restarted (index went back), clock sync reset")
@@ -398,6 +438,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
 
     private fun onAdapterState() {
         if (adapter?.isEnabled != true) {
+            if (status == Status.CONNECTED || status == Status.NO_DATA) listeners.forEach { it.onLink(false) }
             closeGatt()
             setStatus(Status.BT_OFF)
         } else if (status == Status.BT_OFF) {
@@ -414,8 +455,14 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         }
     }
 
-    /** Called by the UI when it comes to the front (permissions may have changed). */
-    fun onUiResume() = handler.post { refreshStatus() }
+    /** Called by the UI when it comes to the front (permissions may have changed). Connects once to a remembered capsule. */
+    fun onUiResume() = handler.post {
+        refreshStatus()
+        if (!autoConnectTried && prefs.capsuleAddress.isNotEmpty() && status == Status.IDLE) {
+            autoConnectTried = true
+            connect()
+        }
+    }
 
     private fun setStatus(s: Status) {
         if (s != status) log.i("ble", "status $s")
@@ -446,8 +493,8 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
             Live(
                 magUt = mags.indices.map { i -> DoubleArray(3) { a -> mags[i].uT(s.mag[3 * i + a]) } },
                 sat = mags.indices.map { i -> (0..2).any { a -> s.flags and Proto.satBit(i, a) != 0 } },
-                gyrDps = DoubleArray(3) { s.gyr[it] * Proto.GYR_MDPS_PER_LSB / 1000.0 },
-                accG = DoubleArray(3) { s.acc[it] * Proto.ACC_MG_PER_LSB / 1000.0 },
+                gyrDps = DoubleArray(3) { s.gyr[it] * info.gyrMdpsPerLsb / 1000.0 },
+                accG = DoubleArray(3) { s.acc[it] * info.accMgPerLsb / 1000.0 },
                 motor = s.motor(),
             )
         } else Live()
@@ -460,7 +507,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
             mags = mags,
             imu = info.imu,
             scan = info.scan.toList(),
-            problems = info.problems(),
+            problems = (if (notice.isNotEmpty()) listOf(notice) else emptyList()) + info.problems(),
             rateHz = info.rateHz,
             rangeG = info.rangeG,
             osr = info.osr,

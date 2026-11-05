@@ -33,12 +33,19 @@ class CapsuleService : Service() {
         } catch (e: Exception) {
             App.get().log.w("service", "startForeground failed", e)
             stopSelf()
+            return START_NOT_STICKY
+        }
+        // Stopping goes through here too: startForeground must run once for every startForegroundService call.
+        if (intent?.action == ACTION_STOP) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
         return START_NOT_STICKY
     }
 
     companion object {
         private const val CHANNEL = "link"
+        private const val ACTION_STOP = "stop"
 
         fun start(ctx: Context) {
             try {
@@ -49,7 +56,11 @@ class CapsuleService : Service() {
         }
 
         fun stop(ctx: Context) {
-            ctx.stopService(Intent(ctx, CapsuleService::class.java))
+            try {
+                ctx.startForegroundService(Intent(ctx, CapsuleService::class.java).setAction(ACTION_STOP))
+            } catch (e: Exception) {
+                ctx.stopService(Intent(ctx, CapsuleService::class.java))
+            }
         }
     }
 }

@@ -86,11 +86,13 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         return before to after
     }
 
-    /** Corrections from typing, after the person confirmed them. */
+    /** Corrections from typing, after the person confirmed them. Runs on the capsule thread like the rest of Brain. */
     fun addCorrections(list: List<Touch>) {
         if (list.isEmpty()) return
-        writeTouches("typing", list, append = true)
-        rebuild(rest, null)
+        engine.post {
+            writeTouches("typing", list, append = true)
+            rebuild(rest, null)
+        }
     }
 
     /** For screenshots only. */
@@ -126,12 +128,13 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         return DoubleArray(6) { i -> l.map { it.x[i] }.average() }
     }
 
-    /** Applies the stored rest and thresholds to the detector (before taps or typing). */
-    fun armSegmenter() {
-        engine.segmenter.p = segParams
-        engine.resetSegmenter()
-        rest?.let { engine.segmenter.setRest(it) }
-    }
+    /** Applies the stored rest and thresholds to the detector (before taps or typing). Capsule thread. */
+    fun armSegmenter() = engine.configure(segParams, rest)
+
+    /** Thresholds as text for the recording's detector event. */
+    fun detectorText(p: Segmenter.Params = segParams, r: DoubleArray? = rest): String =
+        "on_ut=%.2f;stable_ut=%.2f;window_ms=%d;hold_ms=%d;gyro_max_dps=%.0f;rest=%s".format(
+            Locale.US, p.onUt, p.stableUt, p.windowMs, p.holdMs, p.gyroMaxDps, r?.joinToString(";") { "%.2f".format(Locale.US, it) } ?: "")
 
     private fun save() {
         val s = _summary.value

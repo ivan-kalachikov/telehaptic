@@ -45,7 +45,7 @@ class Session(private val app: App) {
         val steps = if (kind == Kind.CALIBRATION) Plans.calibration(plan) else Plans.keys(seq, plan)
         val spec = RecordingSpec(kind, posture, rewear, app.prefs.magnet, app.prefs.distanceMm, note, seed, seq, plan)
         _ui.value = Ui(phase = Phase.STARTING, kind = kind, trials = seq.size)
-        app.recorder.start(spec) { id ->
+        val ok = app.recorder.start(spec) { id ->
             val t0 = SystemClock.uptimeMillis()
             val total = steps.last().atMs
             _ui.value = _ui.value.copy(phase = Phase.LEAD, id = id, startedAt = SystemClock.elapsedRealtime(),
@@ -53,6 +53,7 @@ class Session(private val app: App) {
             app.cues.say(if (kind == Kind.CALIBRATION) "Calibration. Take the magnet off. Keep the hand still." else "Get ready")
             for (s in steps) main.postAtTime({ run(s, plan, steps) }, token, t0 + s.atMs)
         }
+        if (!ok) _ui.value = Ui()
     }
 
     private fun run(s: Step, plan: PlanSettings, steps: List<Step>) {

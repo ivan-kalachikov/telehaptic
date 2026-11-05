@@ -73,10 +73,17 @@ fun HomeScreen(nav: Nav) {
     val ui by app.capsule.ui.collectAsState()
     val ctx = LocalContext.current
     var menu by remember { mutableStateOf(false) }
+    var refused by remember { mutableStateOf(false) }
     val askPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
         app.log.i("perm", res.toString())
         app.capsule.onUiResume()
         if (app.capsule.hasPermissions()) app.capsule.connect()
+        else {
+            // After a second refusal Android no longer shows its dialog: offer the app settings instead.
+            val act = ctx as? android.app.Activity
+            refused = act != null && listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+                .any { !act.shouldShowRequestPermissionRationale(it) && ctx.checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+        }
     }
     val permissions = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS)
 
@@ -91,14 +98,18 @@ fun HomeScreen(nav: Nav) {
             }
         }
     }) {
-        Text("Capsule", fontSize = 26.sp, fontWeight = FontWeight.Bold)
         CapsuleCard(ui, app.prefs.detailed)
 
         when (ui.status) {
             Capsule.Status.NO_PERMISSION -> Section("Permissions") {
                 Text("The app needs Nearby devices access to find the capsule and receive its data. Location is not used.")
                 Text("The notification keeps Android from dropping the capsule link while the screen is off.")
-                Button(onClick = { askPermissions.launch(permissions) }, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
+                if (refused) {
+                    Text("Android will not ask again. Allow Nearby devices in the app settings.", color = Palette.warn)
+                    Button(onClick = {
+                        ctx.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", ctx.packageName, null)))
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Open app settings") }
+                } else Button(onClick = { askPermissions.launch(permissions) }, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
             }
             Capsule.Status.BT_OFF -> Button(
                 onClick = { ctx.startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) },
@@ -106,11 +117,11 @@ fun HomeScreen(nav: Nav) {
             ) { Text("Turn on Bluetooth") }
             Capsule.Status.IDLE, Capsule.Status.NOT_FOUND -> Button(
                 onClick = { app.capsule.connect() }, modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text(if (app.prefs.capsuleAddress.isEmpty()) "Find and connect the capsule" else "Connect the capsule") }
+            ) { Text("Connect the capsule") }
             else -> {}
         }
 
-        LearnCards(nav)
+        LearnCards(nav, ui.status.linked)
 
         if (ui.status.linked || ui.status == Capsule.Status.RECONNECTING || ui.status == Capsule.Status.CONNECTING) {
             TextButton(onClick = { app.capsule.disconnect() }, modifier = Modifier.fillMaxWidth()) { Text("Disconnect the capsule") }
@@ -159,7 +170,7 @@ fun ExperimentsScreen(nav: Nav) {
     val ctx = LocalContext.current
 
     Page("Experiments", nav) {
-        Muted("Recordings for the analysis. Any order.")
+        Muted("Recordings for the analysis, in any order. The capsule must be connected.")
         ExperimentCard("rotate", "Calibration", "No magnet. 10 s with the hand still while the capsule vibrates five times, then 40 s of slowly turning the hand in all directions.") {
             nav.go(Screen.Setup(Kind.CALIBRATION))
         }
@@ -192,6 +203,8 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, onShare: 
             else -> "on the phone" to MaterialTheme.colorScheme.onSurfaceVariant
         }
         Text(text, color = color, fontSize = 12.sp)
+        Spacer(Modifier.width(10.dp))
+        Text("Share ›", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
     }
 }
 
@@ -258,7 +271,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                 Muted("Magnet on the nail")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Prefs.MAGNETS.forEach { (code, label) ->
-                        FilterChip(selected = magnet == code, onClick = { magnet = code; app.prefs.magnet = code }, label = { Text(label.substringAfter(' ')) })
+                        FilterChip(selected = magnet == code, onClick = { magnet = code; app.prefs.magnet = code }, label = { Text(label.substringAfter(' ')) }, colors = chipColors())
                     }
                 }
             }
@@ -319,7 +332,7 @@ fun RunScreen(nav: Nav) {
             Spacer(Modifier.height(24.dp))
             PosePicture("rotate", Modifier.size(120.dp).align(Alignment.CenterHorizontally))
             Text(big, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            if (small.isNotEmpty()) Muted(small, Modifier.fillMaxWidth())
+            if (small.isNotEmpty()) Text(small, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             if (s.phase != Session.Phase.SAVING) Text("$left s", fontSize = 40.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         } else {
             val done = (s.trial + if (s.phase == Session.Phase.HOLD) 0 else 1).coerceAtLeast(0)
@@ -341,12 +354,13 @@ fun RunScreen(nav: Nav) {
             Text(
                 when (s.phase) {
                     Session.Phase.HOLD -> "Hold"
-                    Session.Phase.REST, Session.Phase.ANNOUNCE -> "Release. Next one after the beep"
+                    Session.Phase.REST, Session.Phase.ANNOUNCE -> "Release"
                     Session.Phase.SAVING -> "Saving…"
                     else -> "Get ready"
                 },
-                fontSize = 20.sp,
+                fontSize = 30.sp, fontWeight = FontWeight.Bold,
             )
+            if (s.phase == Session.Phase.REST || s.phase == Session.Phase.ANNOUNCE) Muted("Next key after the beep")
         }
 
         if (s.phase == Session.Phase.SAVING) CircularProgressIndicator()
@@ -356,16 +370,25 @@ fun RunScreen(nav: Nav) {
 
 @Composable
 private fun StopButton(onStop: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().height(52.dp).pointerInput(Unit) { detectTapGestures(onLongPress = { onStop() }) },
-    ) {
-        Box(contentAlignment = Alignment.Center) { Text("Stop: press and hold", color = Palette.bad) }
-    }
+    var ask by remember { mutableStateOf(false) }
+    // The system back button asks the same question.
+    androidx.activity.compose.BackHandler { ask = true }
+    OutlinedButton(onClick = { ask = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Stop", color = Palette.bad) }
+    if (ask) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { ask = false },
+        title = { Text("Stop the recording?") },
+        text = { Text("It is saved as stopped and left out of the analysis.") },
+        confirmButton = { TextButton(onClick = { ask = false; onStop() }) { Text("Stop", color = Palette.bad) } },
+        dismissButton = { TextButton(onClick = { ask = false }) { Text("Keep recording") } },
+    )
 }
 
 // ---------------------------------------------------------------- done
+
+private fun minutes(s: Double): String {
+    val t = s.toInt()
+    return if (t >= 60) "${t / 60} min ${t % 60} s" else "$t s"
+}
 
 @Composable
 fun DoneScreen(nav: Nav) {
@@ -379,33 +402,48 @@ fun DoneScreen(nav: Nav) {
         return
     }
 
-    Page(if (r.aborted) "Recording stopped" else "Recording saved", nav = null) {
+    val finish: () -> Unit = { app.session.reset(); nav.reset(Screen.Experiments) }
+    androidx.activity.compose.BackHandler { finish() }
+    val detailed = app.prefs.detailed
+    Page(if (r.aborted) "Recording stopped" else "Recording saved", nav = nav, onBack = finish) {
         if (r.error != null) Text(r.error, color = Palette.bad)
-        Section {
-            KeyValue("Duration", "${f0(r.durationS)} s")
+        val issues = buildList {
+            if (r.samples == 0L) add("No data. Check the capsule link and record again.")
+            if (r.lossShare > 0.02) add("Many samples lost (${f1(r.lossShare * 100)}%). Keep the phone closer to the hand, with nothing in between.")
+            if (r.saturated > 0) add("A sensor saturated. If this repeats, choose a wider range in Diagnostics or a weaker magnet.")
+            if (r.disconnects > 0) add("The capsule disconnected ${r.disconnects} time(s) during the recording.")
+        }
+        if (r.aborted) Muted("Stopped recordings are kept on the phone but left out of the analysis.")
+        else if (issues.isEmpty() && r.error == null) Text("Recording OK · ${minutes(r.durationS)}", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.ok)
+        issues.forEach { Text(it, color = Palette.warn) }
+        if (detailed) Section {
+            KeyValue("Duration", minutes(r.durationS))
             KeyValue("Samples", "${r.samples}")
             KeyValue("Lost", "${r.lost} (${f1(r.lossShare * 100)}%)")
             KeyValue("Magnetometer saturation", "${r.saturated} samples")
-            if (r.disconnects > 0) KeyValue("Disconnects", "${r.disconnects}")
-            if (r.i2cErrors > 0) KeyValue("Sensor read errors", "${r.i2cErrors}")
+            KeyValue("Disconnects", "${r.disconnects}")
+            KeyValue("Sensor read errors", "${r.i2cErrors}")
+            r.file?.let { Muted(it.name) }
         }
-        if (r.lossShare > 0.02) Text("Many samples lost. Keep the phone closer to the hand, with nothing in between.", color = Palette.warn)
-        if (r.saturated > 0) Text("A sensor saturated. If this repeats, choose a wider range in Diagnostics or a weaker magnet.", color = Palette.warn)
-        if (r.samples == 0L) Text("No data. Check the capsule link and record again.", color = Palette.bad)
 
         val f = r.file
-        if (f != null) {
+        if (f != null && !r.aborted) {
             val item = items[f.name]
             val sent = app.uploader.isSent(f) || item?.state == Uploader.State.SENT
+            val sending = item?.state == Uploader.State.SENDING || item?.state == Uploader.State.WAITING
             when {
                 sent -> Text("Sent to the repository", color = Palette.ok)
-                item?.state == Uploader.State.SENDING || item?.state == Uploader.State.WAITING -> Muted("Sending to the repository…")
+                sending -> Muted("Sending to the repository…")
                 item?.state == Uploader.State.FAILED -> Text(item.message, color = Palette.warn)
             }
-            if (!sent) Button(onClick = { app.uploader.upload(f) }, modifier = Modifier.fillMaxWidth()) { Text("Send to the repository") }
-            OutlinedButton(onClick = { share(ctx, f, "application/zip", "Send recording") }, modifier = Modifier.fillMaxWidth()) { Text("Share") }
-            Muted(f.name)
+            if (!sent) {
+                if (app.prefs.githubToken.isEmpty()) {
+                    Muted("Sending to the repository needs a GitHub token.")
+                    OutlinedButton(onClick = { nav.go(Screen.Settings) }, modifier = Modifier.fillMaxWidth()) { Text("Set up sending") }
+                } else Button(onClick = { app.uploader.upload(f) }, enabled = !sending, modifier = Modifier.fillMaxWidth()) { Text("Send to the repository") }
+            }
         }
-        TextButton(onClick = { app.session.reset(); nav.reset(Screen.Experiments) }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+        if (f != null) OutlinedButton(onClick = { share(ctx, f, "application/zip", "Send recording") }, modifier = Modifier.fillMaxWidth()) { Text("Share the file") }
+        Button(onClick = finish, modifier = Modifier.fillMaxWidth()) { Text("Done") }
     }
 }

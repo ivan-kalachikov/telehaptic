@@ -80,7 +80,7 @@ private fun Root(activity: MainActivity) {
         if (session.phase == Session.Phase.DONE && nav.current == Screen.Run) { nav.back(); nav.go(Screen.Done) }
     }
     BackHandler(enabled = stack.size > 1 && nav.current != Screen.Run) { nav.back() }
-    BackHandler(enabled = nav.current == Screen.Run) { /* stopping is a long press on the button */ }
+    BackHandler(enabled = nav.current == Screen.Run) { /* the Stop button handles back with a confirmation */ }
 
     when (val s = nav.current) {
         Screen.Home -> HomeScreen(nav)

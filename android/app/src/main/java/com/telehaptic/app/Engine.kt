@@ -48,7 +48,7 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
             head = (head + 1) % HIST
             if (size < HIST) size++
             if (mode == Mode.OFF) continue
-            val g = DoubleArray(3) { s.gyr[it] * Proto.GYR_MDPS_PER_LSB / 1000.0 }
+            val g = DoubleArray(3) { s.gyr[it] * capsule.info.gyrMdpsPerLsb / 1000.0 }
             val gyro = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
             val ev = segmenter.add(tNs[k], x.copyOf(), twoSensors, gyro) ?: continue
             val res = if (mode == Mode.TYPING) model?.classify(ev.x) else null
@@ -71,7 +71,16 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
         }
     }
 
+    fun post(r: () -> Unit) = capsule.handler.post(r)
+
     fun resetSegmenter() = capsule.handler.post { segmenter.reset() }
+
+    /** The segmenter lives on the capsule thread; settings change there too. */
+    fun configure(p: Segmenter.Params, rest: DoubleArray?) = capsule.handler.post {
+        segmenter.p = p
+        segmenter.reset()
+        rest?.let { segmenter.setRest(it) }
+    }
 
     companion object {
         const val HIST = 2000  // 10 s at 200 Hz

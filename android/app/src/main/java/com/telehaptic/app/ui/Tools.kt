@@ -62,7 +62,7 @@ fun DiagnosticsScreen(nav: Nav) {
             if (ui.scan.isEmpty()) Muted("No report yet.")
             ui.scan.forEach { Text(ScanText.describe(it), fontSize = 14.sp) }
             if (ui.bootReason.isNotEmpty()) Muted("Firmware ${ui.firmware}, last start: ${bootText(ui.bootReason)}")
-            OutlinedButton(onClick = { app.capsule.rescan() }, enabled = ui.status.linked, modifier = Modifier.fillMaxWidth()) { Text("Rescan") }
+            OutlinedButton(onClick = { app.capsule.rescan() }, enabled = ui.status.linked, modifier = Modifier.fillMaxWidth()) { Text("Rescan the sensors") }
         }
 
         Section("Field, µT") {
@@ -114,14 +114,14 @@ fun DiagnosticsScreen(nav: Nav) {
             Muted("Sampling rate")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(50, 100, 200).forEach { hz ->
-                    FilterChip(selected = ui.rateHz == hz, onClick = { app.capsule.setRate(hz) }, label = { Text("$hz Hz") }, enabled = ui.status.linked)
+                    FilterChip(selected = ui.rateHz == hz, onClick = { app.capsule.setRate(hz) }, label = { Text("$hz Hz") }, colors = chipColors(), enabled = ui.status.linked)
                 }
             }
             Muted("Range")
             val l = ui.mags.any { it.chip == "QMC5883L" }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (if (l) listOf(8, 2) else listOf(30, 12, 8, 2)).forEach { g ->
-                    FilterChip(selected = ui.rangeG == g, onClick = { app.capsule.setRange(g) }, label = { Text("±$g G") }, enabled = ui.status.linked)
+                    FilterChip(selected = ui.rangeG == g, onClick = { app.capsule.setRange(g) }, label = { Text("±$g G") }, colors = chipColors(), enabled = ui.status.linked)
                 }
             }
             Muted("Averaging" + if (l) " (OSR)" else " (OSR1/OSR2)")
@@ -129,10 +129,10 @@ fun DiagnosticsScreen(nav: Nav) {
                 val opts = if (l) listOf(Triple(8, 8, "512"), Triple(4, 8, "256"), Triple(2, 8, "128"), Triple(1, 8, "64"))
                 else listOf(Triple(8, 8, "8/8"), Triple(8, 4, "8/4"), Triple(4, 1, "4/1"), Triple(1, 1, "1/1"))
                 opts.forEach { (a, b, label) ->
-                    FilterChip(selected = ui.osr == "$a/$b", onClick = { app.capsule.setOsr(a, b) }, label = { Text(label) }, enabled = ui.status.linked)
+                    FilterChip(selected = ui.osr == "$a/$b", onClick = { app.capsule.setOsr(a, b) }, label = { Text(label) }, colors = chipColors(), enabled = ui.status.linked)
                 }
             }
-            Muted("Settings last until the capsule restarts.")
+            Muted("Settings last until the capsule restarts. A trained model may fit less well after changing the range or averaging.")
         }
     }
 }
@@ -144,7 +144,7 @@ private fun bootText(r: String) = when (r) {
     "reset_button" -> "reset button"
     "watchdog" -> "watchdog"
     "lockup" -> "CPU lockup"
-    "software" -> "software restart"
+    "software" -> "restarted after sampling stalled"
     else -> r
 }
 
@@ -159,12 +159,18 @@ fun SettingsScreen(nav: Nav) {
     val p = app.prefs
     val ui by app.capsule.ui.collectAsState()
     var detailed by remember { mutableStateOf(p.detailed) }
-    var magnet by remember { mutableStateOf(p.magnet) }
-    var distance by remember { mutableStateOf(if (p.distanceMm > 0) p.distanceMm.toString() else "") }
     var repo by remember { mutableStateOf(p.githubRepo) }
     var token by remember { mutableStateOf(p.githubToken) }
     var auto by remember { mutableStateOf(p.autoUpload) }
     var check by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    if (confirm.isNotEmpty()) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirm = "" },
+        title = { Text(if (confirm == "model") "Delete the model?" else "Forget the capsule?") },
+        text = { Text(if (confirm == "model") "All training touches are deleted. You will need to train again." else "The next Connect searches for a capsule again.") },
+        confirmButton = { TextButton(onClick = { if (confirm == "model") app.brain.forget() else app.capsule.forget(); confirm = "" }) { Text(if (confirm == "model") "Delete" else "Forget", color = Palette.bad) } },
+        dismissButton = { TextButton(onClick = { confirm = "" }) { Text("Cancel") } },
+    )
 
     Page("Settings", nav) {
         Section {
@@ -176,23 +182,10 @@ fun SettingsScreen(nav: Nav) {
                 Switch(checked = detailed, onCheckedChange = { detailed = it; p.detailed = it })
             }
         }
-        Section("Magnet and sensors") {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Prefs.MAGNETS.forEach { (code, label) ->
-                    FilterChip(selected = magnet == code, onClick = { magnet = code; p.magnet = code }, label = { Text(label) })
-                }
-            }
-            OutlinedTextField(
-                value = distance,
-                onValueChange = { v -> distance = v.filter { it.isDigit() }.take(3); p.distanceMm = distance.toIntOrNull() ?: 0 },
-                label = { Text("Distance between the sensors, mm") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        Section("Magnet and sensors") { MagnetFields() }
         Section("Sending recordings to the repository") {
             Muted("GitHub fine-grained token: access to this repository only, permission Contents: Read and write.")
-            OutlinedTextField(value = repo, onValueChange = { repo = it; p.githubRepo = it }, label = { Text("Repository") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = repo, onValueChange = { repo = it; p.githubRepo = it }, label = { Text("Repository") }, placeholder = { Text("owner/repo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = token, onValueChange = { token = it; p.githubToken = it }, label = { Text("Token") }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -208,7 +201,12 @@ fun SettingsScreen(nav: Nav) {
         Section("Capsule") {
             KeyValue("Remembered capsule", p.capsuleAddress.ifEmpty { "none" })
             KeyValue("Firmware", ui.firmware.ifEmpty { "—" })
-            TextButton(onClick = { app.capsule.forget() }) { Text("Forget the capsule") }
+            TextButton(onClick = { confirm = "capsule" }) { Text("Forget the capsule") }
+        }
+        Section("Model") {
+            val sum by app.brain.summary.collectAsState()
+            KeyValue("Training touches", "${sum.touches}")
+            TextButton(onClick = { confirm = "model" }, enabled = sum.trained) { Text("Delete the model", color = Palette.bad) }
         }
         Muted("App ${BuildConfig.VERSION_NAME}")
     }

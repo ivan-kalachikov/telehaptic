@@ -70,11 +70,13 @@ class TypingController(private val app: App) {
         if (typing == null) t9?.let { typing = Typing(it) }
         val t = typing ?: return
         app.capsule.motor(Training.CLICK_MS)
-        // Possible correction: erase right after a key, then a different key.
+        // Possible correction: a letter key erased right away, then another letter key. Only keys 2-9:
+        // an erased space or full stop was usually meant, it is the word that changes.
+        val letter = { k: String -> k.length == 1 && k[0] in '2'..'9' }
         if (r.key == "#") {
-            erased = lastTouch?.takeIf { it.first != "#" }?.second
+            erased = lastTouch?.takeIf { letter(it.first) }?.second
         } else {
-            erased?.let { x -> corrections.add(Touch(r.key, x, "typing", "correction")) }
+            erased?.let { x -> if (letter(r.key)) corrections.add(Touch(r.key, x, "typing", "correction")) }
             erased = null
         }
         lastTouch = r.key to d.x

@@ -18,7 +18,8 @@ struct Packet {
   uint8_t buf[PKT_MAX_PAYLOAD];
 };
 
-static QueueHandle_t txQueue;
+static QueueHandle_t txQueue;     // DATA packets
+static QueueHandle_t infoQueue;   // INFO lines: their own queue, so a full DATA queue cannot drop them
 static QueueHandle_t cmdQueue;
 static volatile bool hello = false;
 volatile uint32_t linkDroppedPackets = 0;
@@ -34,7 +35,7 @@ static void onDisconnect(uint16_t conn, uint8_t reason) {
   (void)conn;
   char line[48];
   snprintf(line, sizeof line, "LINK disconnected reason=0x%02X", reason);
-  Serial.println(line);
+  serialLine(line);
 }
 
 static void onCtrlWrite(uint16_t conn, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -53,7 +54,8 @@ static void onInfoCccd(uint16_t conn, BLECharacteristic* chr, uint16_t value) {
 static void txTask(void*) {
   static Packet p;
   for (;;) {
-    if (xQueueReceive(txQueue, &p, portMAX_DELAY) != pdTRUE) continue;
+    // INFO first (rare, small), then DATA; wait at most 5 ms so INFO is never stuck behind an empty DATA queue.
+    if (xQueueReceive(infoQueue, &p, 0) != pdTRUE && xQueueReceive(txQueue, &p, pdMS_TO_TICKS(5)) != pdTRUE) continue;
     BLECharacteristic& chr = p.kind == 0 ? chrData : chrInfo;
     if (!Bluefruit.connected() || !chr.notifyEnabled()) continue;
     if (!chr.notify(p.buf, p.len) && p.kind == 0) linkDroppedPackets++;
@@ -62,6 +64,7 @@ static void txTask(void*) {
 
 void linkBegin() {
   txQueue = xQueueCreate(16, sizeof(Packet));
+  infoQueue = xQueueCreate(24, sizeof(Packet));
   cmdQueue = xQueueCreate(8, sizeof(Command));
 
   Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
@@ -130,11 +133,18 @@ bool linkSendData(const uint8_t* buf, uint16_t len) {
 }
 
 void linkInfo(const char* line) {
-  Serial.println(line);
+  serialLine(line);
   if (!Bluefruit.connected() || !chrInfo.notifyEnabled()) return;
   static Packet p;
   p.kind = 1;
   p.len = strnlen(line, PKT_MAX_PAYLOAD);
   memcpy(p.buf, line, p.len);
-  xQueueSend(txQueue, &p, pdMS_TO_TICKS(5));
+  xQueueSend(infoQueue, &p, pdMS_TO_TICKS(20));
+}
+
+// A terminal that keeps the port open but does not read would make Serial.write wait for ever
+// (Adafruit_USBD_CDC::write loops while connected). Write only when the whole line fits.
+void serialLine(const char* line) {
+  size_t n = strlen(line);
+  if (Serial && Serial.availableForWrite() >= (int)(n + 2)) Serial.println(line);
 }

@@ -19,3 +19,6 @@ bool linkSendData(const uint8_t* buf, uint16_t len);
 void linkInfo(const char* line);
 
 extern volatile uint32_t linkDroppedPackets;
+
+// USB Serial line that never blocks.
+void serialLine(const char* line);
