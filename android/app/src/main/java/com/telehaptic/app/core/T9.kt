@@ -1,7 +1,7 @@
 package com.telehaptic.app.core
 
 /**
- * T9 for Russian: keys 2-9 carry letters as on Russian phone keypads, words come from a
+ * T9 for English: keys 2-9 carry letters as on phone keypads (ITU E.161), words come from a
  * frequency list. 0 = space (accepts the word), 1 = full stop, * = next variant of the word,
  * # = erase.
  */
@@ -30,8 +30,8 @@ class T9(words: Sequence<Pair<String, Long>>) {
 
     companion object {
         private val LETTERS = mapOf(
-            '2' to "абвг", '3' to "деёжз", '4' to "ийкл", '5' to "мноп",
-            '6' to "рсту", '7' to "фхцч", '8' to "шщъы", '9' to "ьэюя",
+            '2' to "abc", '3' to "def", '4' to "ghi", '5' to "jkl",
+            '6' to "mno", '7' to "pqrs", '8' to "tuv", '9' to "wxyz",
         )
         private val DIGIT = HashMap<Char, Char>().apply { for ((d, s) in LETTERS) for (c in s) put(c, d) }
 

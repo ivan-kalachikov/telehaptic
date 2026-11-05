@@ -79,8 +79,8 @@ class CoreTest {
         assertEquals(3987, c.batteryMv)
         val problems = c.problems()
         assertEquals(1, problems.size)                // ch2 is the spare, not a problem
-        assertTrue(problems[0].contains("Канал 1"))
-        assertTrue(problems[0].contains("подтяжки"))
+        assertTrue(problems[0].contains("Channel 1"))
+        assertTrue(problems[0].contains("pull-ups"))
         assertEquals(123L to 456L, c.apply("PONG 123 456"))
         assertNull(c.apply("MOTOR on idx=5 t=6 ms=40"))
     }
@@ -100,9 +100,9 @@ class CoreTest {
             for (b in 0 until 4) assertEquals(Keys.ALL.toSet(), s.subList(12 * b, 12 * b + 12).toSet())
             for (i in 1 until s.size) assertFalse("repeat at $i", s[i] == s[i - 1])
         }
-        assertEquals("мизинец", Keys.finger("#"))
-        assertEquals("фаланга у кончика", Keys.phalanx("#"))
-        assertEquals("фаланга у ладони", Keys.phalanx("4"))
+        assertEquals("little", Keys.finger("#"))
+        assertEquals("phalanx at the tip", Keys.phalanx("#"))
+        assertEquals("phalanx near the palm", Keys.phalanx("4"))
     }
 
     @Test fun plans() {

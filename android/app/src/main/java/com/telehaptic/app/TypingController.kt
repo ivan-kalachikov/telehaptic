@@ -34,11 +34,11 @@ class TypingController(private val app: App) {
     private var lastTouch: Pair<String, DoubleArray>? = null
     private var erased: DoubleArray? = null
 
-    /** Loads the dictionary in the background (about 48 thousand words). */
+    /** Loads the dictionary in the background (about 47 thousand words). */
     fun preload() {
         Thread {
             try {
-                val dict = T9(T9.parse(app.assets.open("ru_words.txt").bufferedReader().lineSequence()))
+                val dict = T9(T9.parse(app.assets.open("en_words.txt").bufferedReader().lineSequence()))
                 t9 = dict
                 app.log.i("t9", "dictionary loaded")
             } catch (e: Exception) {

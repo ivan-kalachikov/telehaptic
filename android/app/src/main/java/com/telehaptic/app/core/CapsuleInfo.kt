@@ -1,7 +1,7 @@
 package com.telehaptic.app.core
 
 /**
- * State assembled from the capsule's INFO text lines (docs/protocol.md, "Строки INFO").
+ * State assembled from the capsule's INFO text lines (docs/protocol.md, "INFO lines").
  * Not thread-safe; owned by one thread.
  */
 class CapsuleInfo {
@@ -62,27 +62,27 @@ class CapsuleInfo {
         return null
     }
 
-    /** Problems a person should see, in plain Russian, with what to do. */
+    /** Problems a person should see, in plain words, with what to do. */
     fun problems(): List<String> {
         val out = ArrayList<String>()
         for (l in scan) ScanText.problem(l)?.let { out.add(it) }
-        if (scanDone && mags.isEmpty() && out.isEmpty()) out.add("Капсула не нашла ни одного магнитометра. Откройте Диагностику.")
-        if (!imu && lastConfigLine.isNotEmpty()) out.add("Встроенный акселерометр и гироскоп не ответили.")
+        if (scanDone && mags.isEmpty() && out.isEmpty()) out.add("The capsule found no magnetometer. Open Diagnostics.")
+        if (!imu && lastConfigLine.isNotEmpty()) out.add("The built-in accelerometer and gyroscope did not answer.")
         return out
     }
 }
 
-/** Human text for SCAN lines. */
+/** Plain-language text for SCAN lines. */
 object ScanText {
     private fun place(where: String) = when {
-        where == "main" -> "Основная шина"
-        where.startsWith("ch") -> "Канал ${where.removePrefix("ch")}"
+        where == "main" -> "Main bus"
+        where.startsWith("ch") -> "Channel ${where.removePrefix("ch")}"
         else -> where
     }
 
     private fun wires(where: String): String {
         val ch = where.removePrefix("ch")
-        return if (where.startsWith("ch")) "провода SD$ch/SC$ch" else "провода D4 (SDA) и D5 (SCL)"
+        return if (where.startsWith("ch")) "the SD$ch/SC$ch wires" else "the D4 (SDA) and D5 (SCL) wires"
     }
 
     /** One line for the scan list in Diagnostics. */
@@ -91,18 +91,18 @@ object ScanText {
         if (p.size < 2) return line
         val where = p[1]
         return when {
-            where == "begin" -> if (line.contains("mux=yes")) "Мультиплексор найден" else "Мультиплексор не ответил, ищу датчики прямо на шине"
-            where == "end" -> "Найдено магнитометров: ${line.substringAfter("mags=", "0")}"
-            where == "BUS_STUCK" -> "Шина I2C не работает: " + stuckWhich(line) + ". Проверьте провода D4/D5, замыкание на GND и подтяжки."
+            where == "begin" -> if (line.contains("mux=yes")) "Multiplexer found" else "No multiplexer, looking for sensors on the main bus"
+            where == "end" -> "Magnetometers found: ${line.substringAfter("mags=", "0")}"
+            where == "BUS_STUCK" -> "I2C bus is not working: " + stuckWhich(line) + ". Check the D4/D5 wires, shorts to GND and pull-ups."
             p.size >= 4 && p[2].startsWith("0x") && (p[3] == "QMC5883P" || p[3] == "QMC5883L") ->
-                "${place(where)}: ${p[3]}, датчик ${p.getOrNull(4)?.removePrefix("mag") ?: "?"}" +
-                    (if (line.contains("NOTE")) " (идентификатор необычный, но работаю)" else "")
-            p.getOrNull(3) == "HMC5883L" -> "${place(where)}: HMC5883L, этот чип прошивка не поддерживает"
-            p.getOrNull(3) == "UNKNOWN" -> "${place(where)}: неизвестный чип по адресу ${p[2]}"
-            p.getOrNull(2) == "OTHER" -> "${place(where)}: магнитометра нет, отвечают адреса ${p.drop(3).joinToString(" ")}"
-            p.getOrNull(2) == "EMPTY" && where == "ch2" -> "Канал 2 (запасной): датчика нет"
-            p.getOrNull(2) == "EMPTY" -> "${place(where)}: датчик не отвечает. Проверьте ${wires(where)} и подтяжки 4,7 кОм к 3,3 В"
-            p.getOrNull(2) == "MUX_ERROR" -> "${place(where)}: мультиплексор не переключился"
+                "${place(where)}: ${p[3]}, sensor ${p.getOrNull(4)?.removePrefix("mag") ?: "?"}" +
+                    (if (line.contains("NOTE")) " (unusual ID, working anyway)" else "")
+            p.getOrNull(3) == "HMC5883L" -> "${place(where)}: HMC5883L, the firmware does not support this chip"
+            p.getOrNull(3) == "UNKNOWN" -> "${place(where)}: unknown chip at ${p[2]}"
+            p.getOrNull(2) == "OTHER" -> "${place(where)}: no magnetometer; other devices answer at ${p.drop(3).joinToString(" ")}"
+            p.getOrNull(2) == "EMPTY" && where == "ch2" -> "Channel 2 (spare): empty"
+            p.getOrNull(2) == "EMPTY" -> "${place(where)}: sensor does not answer. Check ${wires(where)} and the 4.7 kΩ pull-ups to 3.3 V"
+            p.getOrNull(2) == "MUX_ERROR" -> "${place(where)}: the multiplexer did not switch"
             else -> line
         }
     }
@@ -111,10 +111,10 @@ object ScanText {
         val sda = line.contains("sda=0")
         val scl = line.contains("scl=0")
         return when {
-            sda && scl -> "обе линии SDA и SCL прижаты к земле"
-            sda -> "линия SDA прижата к земле"
-            scl -> "линия SCL прижата к земле"
-            else -> "линии не в покое"
+            sda && scl -> "both SDA and SCL are held low"
+            sda -> "SDA is held low"
+            scl -> "SCL is held low"
+            else -> "the lines are not idle"
         }
     }
 

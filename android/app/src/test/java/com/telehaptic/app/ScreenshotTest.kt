@@ -119,7 +119,7 @@ class ScreenshotTest {
         shot("8-diagnostics")
     }
 
-    private val trained = Brain.Summary(trained = true, date = "11 нояб., 15:40", correct = 41, total = 48,
+    private val trained = Brain.Summary(trained = true, date = "Nov 11, 15:40", correct = 41, total = 48,
         confusions = listOf(Triple("2", "5", 3), Triple("6", "9", 2), Triple("#", "9", 1)), weakKeys = listOf("5", "2", "9"), touches = 48)
 
     @Test fun homeTrained() {
@@ -161,8 +161,8 @@ class ScreenshotTest {
         app.brain.showForPreview(trained)
         rule.mainClock.autoAdvance = false
         rule.setContent { AppTheme { TypingScreen(nav(Screen.Home, Screen.Typing)) } }
-        app.typing.showForPreview(TypingController.Ui(text = "привет как дела", candidates = listOf("дела", "жела", "дел"), variant = 0,
-            lastKey = "2", flashUntil = Long.MAX_VALUE, posterior = 0.82, second = "5", secondPosterior = 0.11, ready = true))
+        app.typing.showForPreview(TypingController.Ui(text = "hello how are you", candidates = listOf("you", "yo", "zp"), variant = 0,
+            lastKey = "8", flashUntil = Long.MAX_VALUE, posterior = 0.82, second = "5", secondPosterior = 0.11, ready = true))
         shot("13-typing")
     }
 }

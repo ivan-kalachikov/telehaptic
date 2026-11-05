@@ -70,9 +70,9 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 /** Russian number formatting: 1,5 */
-fun f1(x: Double) = String.format(Locale.forLanguageTag("ru"), "%.1f", x)
-fun f0(x: Double) = String.format(Locale.forLanguageTag("ru"), "%.0f", x)
-fun f2(x: Double) = String.format(Locale.forLanguageTag("ru"), "%.2f", x)
+fun f1(x: Double) = String.format(Locale.US, "%.1f", x)
+fun f0(x: Double) = String.format(Locale.US, "%.0f", x)
+fun f2(x: Double) = String.format(Locale.US, "%.2f", x)
 
 @Composable
 fun Section(title: String? = null, content: @Composable () -> Unit) {

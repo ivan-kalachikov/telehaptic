@@ -94,7 +94,7 @@ jobs:
       - run: |
           python tools/make_fake_data.py /tmp/fake
           python analysis/analyze.py /tmp/fake
-          grep -q "Поле Земли в разности" report/report.md
+          grep -q "Earth field left in the difference" report/report.md
 
   release:
     needs: [firmware, android]
@@ -113,4 +113,4 @@ jobs:
           gh release create latest out/firmware/telehaptic.uf2 out/android/telehaptic.apk \
             --target "$GITHUB_SHA" --prerelease \
             --title "Telehaptic, build ${{ github.run_number }}" \
-            --notes "Сборка ${{ github.run_number }} из ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. telehaptic.uf2: дважды быстро нажмите reset на XIAO, появится диск XIAO-SENSE, скопируйте файл на него. telehaptic.apk: откройте эту страницу на телефоне, скачайте и установите."
+            --notes "Build ${{ github.run_number }} from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. telehaptic.uf2: double-tap reset on the XIAO, the XIAO-SENSE drive appears, copy the file onto it. telehaptic.apk: open this page on the phone, download and install."

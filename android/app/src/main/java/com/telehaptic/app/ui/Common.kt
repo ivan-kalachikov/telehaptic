@@ -56,22 +56,22 @@ fun Page(
 }
 
 fun statusTitle(s: Capsule.Status) = when (s) {
-    Capsule.Status.NO_PERMISSION -> "Нужно разрешение на Bluetooth"
-    Capsule.Status.BT_OFF -> "Bluetooth выключен"
-    Capsule.Status.IDLE -> "Капсула не подключена"
-    Capsule.Status.SEARCHING -> "Ищу капсулу…"
-    Capsule.Status.NOT_FOUND -> "Капсула не найдена"
-    Capsule.Status.CONNECTING -> "Подключаюсь…"
-    Capsule.Status.CONNECTED -> "Подключена"
-    Capsule.Status.NO_DATA -> "На связи, но данные не идут"
-    Capsule.Status.RECONNECTING -> "Связь потеряна, переподключаюсь…"
+    Capsule.Status.NO_PERMISSION -> "Bluetooth permission needed"
+    Capsule.Status.BT_OFF -> "Bluetooth is off"
+    Capsule.Status.IDLE -> "Capsule not connected"
+    Capsule.Status.SEARCHING -> "Looking for the capsule…"
+    Capsule.Status.NOT_FOUND -> "Capsule not found"
+    Capsule.Status.CONNECTING -> "Connecting…"
+    Capsule.Status.CONNECTED -> "Connected"
+    Capsule.Status.NO_DATA -> "Connected, but no data"
+    Capsule.Status.RECONNECTING -> "Connection lost, reconnecting…"
 }
 
 fun statusHint(s: Capsule.Status) = when (s) {
-    Capsule.Status.BT_OFF -> "Включите Bluetooth в быстрых настройках."
-    Capsule.Status.NOT_FOUND -> "Включите капсулу и поднесите её к телефону, затем нажмите «Подключить»."
-    Capsule.Status.NO_DATA -> "Перезапустите капсулу выключателем. Если не поможет — откройте Диагностику и Логи."
-    Capsule.Status.RECONNECTING -> "Проверьте, что капсула включена и рядом."
+    Capsule.Status.BT_OFF -> "Turn Bluetooth on in quick settings."
+    Capsule.Status.NOT_FOUND -> "Switch the capsule on, bring it close to the phone and tap Connect."
+    Capsule.Status.NO_DATA -> "Switch the capsule off and on. If that does not help, open Diagnostics and Logs."
+    Capsule.Status.RECONNECTING -> "Check that the capsule is on and nearby."
     else -> ""
 }
 

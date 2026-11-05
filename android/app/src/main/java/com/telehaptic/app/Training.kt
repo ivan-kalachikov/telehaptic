@@ -63,7 +63,7 @@ class Training(private val app: App) {
         tapSeq = Keys.sequence(2, Random.Default).toMutableList()
         beginRecording(Kind.TRAIN) {
             _ui.value = Ui(phase = Phase.HOLDS, total = holdSeq.size)
-            app.cues.say("Обучение. Сначала касания с удержанием.")
+            app.cues.say("Training. First, touches with a hold.")
             main.postAtTime({ holdTrial(0) }, token, SystemClock.uptimeMillis() + 2500)
         }
     }
@@ -71,7 +71,7 @@ class Training(private val app: App) {
     /** keys = which keys to practise; each gets [reps] quick taps. */
     fun startRetrain(keys: List<String>, reps: Int) {
         if (active || app.session.running || app.recorder.isOpen) return
-        if (app.brain.model == null) { _ui.value = Ui(error = "Сначала пройдите обучение."); return }
+        if (app.brain.model == null) { _ui.value = Ui(error = "Complete the training first."); return }
         touches.clear()
         val rnd = Random.Default
         val seq = ArrayList<String>()
@@ -110,7 +110,7 @@ class Training(private val app: App) {
                 _ui.value = _ui.value.copy(holdStep = HoldStep.REST)
                 app.engine.windowMedian(press + 500_000_000L, release - 200_000_000L) { x ->
                     if (x != null) touches.add(Touch(k, x, "hold${i / 12}", "hold"))
-                    else _ui.value = _ui.value.copy(hint = "Нет данных от капсулы за это касание.")
+                    else _ui.value = _ui.value.copy(hint = "No data from the capsule for this touch.")
                 }
                 main.postAtTime({
                     val r0 = SystemClock.elapsedRealtimeNanos()
@@ -123,7 +123,7 @@ class Training(private val app: App) {
 
     private fun finishHolds() {
         if (touches.size < 12) {
-            fail("Слишком мало данных от капсулы. Проверьте связь и начните заново.")
+            fail("Too little data from the capsule. Check the connection and start again.")
             return
         }
         // Detector thresholds from the holds: rest level and the key centres.
@@ -140,7 +140,7 @@ class Training(private val app: App) {
         app.engine.segmenter.setRest(restY)
         pendingRest = restY
         app.log.i("train", "holds done: ${touches.size}, onUt ${params.onUt}")
-        app.cues.say("Теперь быстрые касания, в своём темпе.")
+        app.cues.say("Now quick taps, at your own pace.")
         main.postAtTime({ startTaps(retrain = false) }, token, SystemClock.uptimeMillis() + 2500)
     }
 
@@ -165,7 +165,7 @@ class Training(private val app: App) {
         val my = tapIndex
         main.postAtTime({
             if (_ui.value.phase == Phase.TAPS && tapIndex == my && !_ui.value.paused)
-                _ui.value = _ui.value.copy(hint = "Касание не замечено. Коснитесь чуть увереннее и задержите палец на миг.")
+                _ui.value = _ui.value.copy(hint = "Touch not detected. Touch a little firmer and keep the thumb there for a moment.")
         }, token, SystemClock.uptimeMillis() + 8000)
     }
 
@@ -210,7 +210,7 @@ class Training(private val app: App) {
                 l.add(minOf(u.index + 1, l.size), last.key)
                 holdSeq = l
                 app.recorder.event("repeat", u.index, last.key)
-                _ui.value = u.copy(total = holdSeq.size, hint = "Клавиша ${last.key} будет ещё раз.")
+                _ui.value = u.copy(total = holdSeq.size, hint = "Key ${last.key} will come again.")
             }
             else -> {}
         }
@@ -244,7 +244,7 @@ class Training(private val app: App) {
             }
             main.post {
                 app.recorder.finish(false) { r -> if (r.file != null && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file) }
-                if (after == null) fail("Не удалось обучить модель. Подробности в Логах.")
+                if (after == null) fail("Could not train the model. Details in Logs.")
                 else _ui.value = _ui.value.copy(phase = Phase.RESULT, before = before, report = after)
             }
         }.start()

@@ -120,7 +120,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
                 open = true
                 log.i("rec", "start $id, magnetometers $nMags")
             } catch (e: Exception) {
-                error = "Не удалось начать запись: $e"
+                error = "Could not start the recording: $e"
                 log.w("rec", "start", e)
             }
             main.post { onStarted(id) }
@@ -139,7 +139,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
     private fun writer(f: File, header: String) = BufferedWriter(FileWriter(f), 1 shl 16).apply { write(header); write("\n") }
 
     private fun write(w: BufferedWriter?, s: String) {
-        try { w?.write(s) } catch (e: Exception) { if (error == null) error = "Ошибка записи: $e" }
+        try { w?.write(s) } catch (e: Exception) { if (error == null) error = "Write error: $e" }
     }
 
     // ------------------------------------------------------------ stream (capsule thread)
@@ -202,7 +202,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
                     file = z
                     log.i("rec", "saved ${z.name}, ${z.length()} bytes, samples $count, lost $lost")
                 } catch (e: Exception) {
-                    error = "Не удалось сохранить запись: $e"
+                    error = "Could not save the recording: $e"
                     log.w("rec", "save", e)
                 }
             }

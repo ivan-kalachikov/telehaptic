@@ -1,23 +1,29 @@
-# Записи
+# Recordings
 
-Сюда приложение само кладёт записи кнопкой «Отправить в репозиторий» (или их можно скопировать вручную). Одна запись — один zip:
+The app puts recordings here with "Send to the repository"; they can also be copied by hand. One recording is one zip:
 
-| файл | что внутри |
+| File | Contents |
 |---|---|
-| `samples.csv` | `idx, t_xiao, t_ns`, сырые значения магнитометров `m1x..m2z`, гироскопа `gx..gz`, акселерометра `ax..az`, флаги |
-| `events.csv` | сигналы и клавиши: `announce`, `press`, `release`, `tap`, `motor_cmd`, … — на часах телефона |
-| `packets.csv` | время приёма каждого пакета — для пересчёта часов и потерь |
-| `sync.csv` | пинги: время туда-обратно |
-| `info.csv` | текстовые строки капсулы: скан, настройки, батарея, мотор |
-| `meta.json` | вид записи, поза, повторное надевание, магнит, расстояние между датчиками, чипы, диапазон, частота, версии |
+| `samples.csv` | `idx, t_xiao, t_ns`, raw magnetometer values `m1x..m2z`, gyroscope `gx..gz`, accelerometer `ax..az`, flags |
+| `events.csv` | cues and keys: `announce`, `press`, `release`, `tap`, `motor_cmd`, … on the phone clock |
+| `packets.csv` | receive time of every packet, to refit the clock and count losses |
+| `sync.csv` | pings: round trip time |
+| `info.csv` | capsule text lines: scan, settings, battery, motor |
+| `meta.json` | kind, posture, re-wearing, magnet, distance between the sensors, chips, range, rate, versions |
 
-Имена: `CAL_…` — калибровка, `KEYS_table_…` / `KEYS_down_…` — клавиши в позе «на столе» / «вдоль тела», `_rewear` — после повторного надевания, `NOMAG_…` — без магнита, `TRAIN_…` / `RETRAIN_…` — обучение и дообучение из приложения. `_ABORTED` — остановленные записи, анализ их пропускает.
+Names:
+- `CAL_…`: calibration.
+- `KEYS_table_…` / `KEYS_down_…`: keys with the hand on the table / the arm along the body.
+- `_rewear`: after putting the capsule on again.
+- `NOMAG_…`: without the magnet.
+- `TRAIN_…` / `RETRAIN_…`: training and retraining in the app.
+- `_ABORTED`: stopped recordings; the analysis skips them.
 
-Анализ: `pip install -r analysis/requirements.txt`, затем `python analysis/analyze.py data` → `report/report.md`.
+Analysis: `pip install -r analysis/requirements.txt`, then `python analysis/analyze.py data` → `report/report.md`.
 
-Проверка кода анализа без настоящих данных: `python tools/make_fake_data.py /tmp/fake && python analysis/analyze.py /tmp/fake`. Такие записи синтетические, в `data/` их не класть.
+Testing the analysis without real data: `python tools/make_fake_data.py /tmp/fake && python analysis/analyze.py /tmp/fake`. Those recordings are synthetic; never put them into `data/`.
 
-## Журнал записей
+## Log
 
-| файл | что важно знать |
+| File | Notes |
 |---|---|

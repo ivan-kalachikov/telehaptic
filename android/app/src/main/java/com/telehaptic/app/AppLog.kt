@@ -8,7 +8,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Technical log for "Поделиться логами": everything a person does not need to read on screen. */
+/** Technical log for "Share logs": everything a person does not need to read on screen. */
 class AppLog(ctx: Context) {
     val dir = File(ctx.filesDir, "logs").apply { mkdirs() }
     val file = File(dir, "app.log")

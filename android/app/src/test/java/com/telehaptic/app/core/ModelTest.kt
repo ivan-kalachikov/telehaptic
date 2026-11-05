@@ -93,20 +93,21 @@ class ModelTest {
     }
 
     @Test fun t9() {
-        val t9 = T9(sequenceOf("привет" to 100L, "работа" to 50L, "как" to 90L, "дела" to 80L, "кот" to 30L, "лот" to 10L))
-        assertEquals("564236", T9.code("привет"))   // п5 р6 и4 в2 е3 т6
-        assertEquals("3342", T9.code("дела"))
-        assertEquals(listOf("кот", "лот"), t9.candidates("456"))
-        assertEquals("ка", t9.candidates("42")[0])     // beginning of "как"
+        val t9 = T9(sequenceOf("hello" to 100L, "good" to 90L, "home" to 80L, "gone" to 30L, "work" to 50L))
+        assertEquals("43556", T9.code("hello"))     // h4 e3 l5 l5 o6
+        assertEquals(listOf("good", "home", "gone"), t9.candidates("4663"))
+        assertEquals("go", t9.candidates("46")[0])     // beginning of "good"
         val typing = Typing(t9)
-        "564236".forEach { typing.key(it.toString()) }
+        "43556".forEach { typing.key(it.toString()) }
         typing.key("0")
-        "456".forEach { typing.key(it.toString()) }
+        "4663".forEach { typing.key(it.toString()) }
         typing.key("*")
-        assertEquals("привет лот", typing.display())
+        assertEquals("hello home", typing.display())
         typing.key("#")
-        assertEquals("привет ко", typing.display())   // "45" = beginning of "кот"
+        assertEquals("hello goo", typing.display())    // "466" = beginning of "good"
         typing.key("#"); typing.key("#"); typing.key("#")
-        assertEquals("привет", typing.display())
+        assertEquals("hello ", typing.display())        // the digits are gone, the space stays
+        typing.key("#")
+        assertEquals("hello", typing.display())
     }
 }

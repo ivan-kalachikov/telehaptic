@@ -68,12 +68,12 @@ class Uploader(private val ctx: Context, private val prefs: Prefs, private val l
                 val c = open("https://api.github.com/repos/${prefs.githubRepo}", "GET")
                 when (val code = c.responseCode) {
                     200 -> null
-                    401 -> "Токен не подходит: GitHub его не принял."
-                    403, 404 -> "Репозиторий ${prefs.githubRepo} не найден или у токена нет к нему доступа."
-                    else -> "GitHub ответил $code."
+                    401 -> "GitHub did not accept the token."
+                    403, 404 -> "Repository ${prefs.githubRepo} not found, or the token has no access to it."
+                    else -> "GitHub answered $code."
                 }
             } catch (e: Exception) {
-                "Нет связи с GitHub. Проверьте интернет."
+                "Cannot reach GitHub. Check the internet connection."
             })
         }
     }
@@ -92,7 +92,7 @@ class Uploader(private val ctx: Context, private val prefs: Prefs, private val l
 
     /** Null on success, else a message a person can act on. */
     private fun put(path: String, bytes: ByteArray, message: String): String? {
-        if (prefs.githubToken.isEmpty()) return "Нет токена GitHub. Добавьте его в Настройках."
+        if (prefs.githubToken.isEmpty()) return "No GitHub token. Add it in Settings."
         return try {
             val body = JSONObject()
                 .put("message", message)
@@ -109,13 +109,13 @@ class Uploader(private val ctx: Context, private val prefs: Prefs, private val l
             when {
                 code == 200 || code == 201 -> null
                 code == 422 && err.contains("sha") -> null   // the file is already there
-                code == 401 -> "Токен не подходит. Проверьте его в Настройках."
-                code == 403 || code == 404 -> "У токена нет права записи в ${prefs.githubRepo}."
-                else -> "GitHub ответил $code. Попробуйте позже."
+                code == 401 -> "GitHub did not accept the token. Check it in Settings."
+                code == 403 || code == 404 -> "The token cannot write to ${prefs.githubRepo}."
+                else -> "GitHub answered $code. Try again later."
             }
         } catch (e: Exception) {
             log.w("upload", path, e)
-            "Нет связи с GitHub. Отправлю, когда появится интернет: нажмите «Отправить»."
+            "Cannot reach GitHub. Tap Send again when you are online."
         }
     }
 }

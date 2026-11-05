@@ -43,14 +43,14 @@ TICKS = 32768.0
 HOLD_FROM, HOLD_BEFORE_END = 0.8, 0.3
 REST_FROM, REST_BEFORE_END = 0.8, 0.15
 
-STAND = "стенд (телефон, P1_r1): внутри записи LDA и kNN по полю при касании 73–75%, 95% интервал ≈ 59–85%"
+STAND = "phone stand (recording P1_r1): within a recording, LDA and kNN on the field at the touch 73–75%, 95% interval ≈ 59–85%"
 
 FEATURES = {
-    "s1": "датчик 1 (3 числа)",
-    "s2": "датчик 2 (3 числа)",
-    "both": "оба датчика (6 чисел)",
-    "diff": "разность датчиков 1 − 2 (3 числа)",
-    "both+g": "оба датчика + направление гравитации",
+    "s1": "sensor 1 (3 numbers)",
+    "s2": "sensor 2 (3 numbers)",
+    "both": "both sensors (6 numbers)",
+    "diff": "difference 1 − 2 (3 numbers)",
+    "both+g": "both sensors + gravity direction",
 }
 MODELS = {
     "LDA": lambda: make_pipeline(StandardScaler(), LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")),
@@ -136,11 +136,11 @@ def quality(rec):
     if rec["sync"] is not None and len(rec["sync"]):
         rtt = float(np.median(rec["sync"]["t_recv_ns"] - rec["sync"]["t_send_ns"]) / 1e6)
     c = rec["clock"] or {}
-    return {"запись": rec["id"], "отсчётов": len(idx), "частота, Гц": len(idx) / dur if dur > 0 else np.nan,
-            "потери, %": 100 * lost / max(1, lost + len(idx)), "насыщение (отсчёты)": ", ".join(f"{k}: {v}" for k, v in sat.items()),
-            "нет новых данных, %": 100 * np.mean(f & (1 << 11) != 0), "ошибки I2C": int(np.sum(f & (1 << 13) != 0)),
-            "RTT медиана, мс": rtt, "часы: разброс, мс": c.get("resid_ms", np.nan),
-            "часы: живые vs пересчёт, мс": c.get("live_vs_refit_ms", np.nan)}
+    return {"recording": rec["id"], "samples": len(idx), "rate, Hz": len(idx) / dur if dur > 0 else np.nan,
+            "lost, %": 100 * lost / max(1, lost + len(idx)), "saturated (samples)": ", ".join(f"{k}: {v}" for k, v in sat.items()),
+            "no new data, %": 100 * np.mean(f & (1 << 11) != 0), "I2C errors": int(np.sum(f & (1 << 13) != 0)),
+            "RTT median, ms": rtt, "clock: spread, ms": c.get("resid_ms", np.nan),
+            "clock: live vs refit, ms": c.get("live_vs_refit_ms", np.nan)}
 
 
 # ---------------------------------------------------------------- trials
@@ -233,8 +233,8 @@ def acc_row(name, yt, yp):
     n = len(yt)
     k = int(sum(a == b for a, b in zip(yt, yp)))
     lo, hi = wilson(k, n)
-    return {"проверка": name, "верно": k, "всего": n, "точность, %": 100 * k / n if n else np.nan,
-            "95% интервал": f"{100 * lo:.0f}–{100 * hi:.0f}%" if n else "—"}
+    return {"check": name, "correct": k, "total": n, "accuracy, %": 100 * k / n if n else np.nan,
+            "95% interval": f"{100 * lo:.0f}–{100 * hi:.0f}%" if n else "—"}
 
 
 def neighbour_distances(df, feat):
@@ -348,12 +348,12 @@ def calibration(rec, figdir):
                     "rot_deg": float(np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1))))})
         fig, ax = plt.subplots(figsize=(7, 2.6))
         tt = rec["t"][w][~motor]
-        ax.plot(tt, np.linalg.norm(P[0] - np.median(P[0], 0), axis=1), color=MUTED, lw=0.7, label="датчик 1, отклонение")
-        ax.plot(tt, np.linalg.norm(raw_d - np.median(raw_d, 0), axis=1), color=ORANGE, lw=0.7, label="разность без калибровки")
-        ax.plot(tt, np.linalg.norm(d - np.median(d, 0), axis=1), color=BLUE, lw=0.9, label="разность после калибровки")
+        ax.plot(tt, np.linalg.norm(P[0] - np.median(P[0], 0), axis=1), color=MUTED, lw=0.7, label="sensor 1, deviation")
+        ax.plot(tt, np.linalg.norm(raw_d - np.median(raw_d, 0), axis=1), color=ORANGE, lw=0.7, label="difference, uncalibrated")
+        ax.plot(tt, np.linalg.norm(d - np.median(d, 0), axis=1), color=BLUE, lw=0.9, label="difference, calibrated")
         ax.axvline(tt[half], color=GRID, lw=1)
-        ax.set_xlabel("время, с"); ax.set_ylabel("мкТл"); ax.legend(frameon=False, fontsize=8)
-        ax.set_title(f"{rec['id']}: вращение кисти без магнита (слева от линии — подгонка, справа — проверка)", fontsize=9)
+        ax.set_xlabel("time, s"); ax.set_ylabel("µT"); ax.legend(frameon=False, fontsize=8)
+        ax.set_title(f"{rec['id']}: hand turning without the magnet (left of the line: fit, right: check)", fontsize=9)
         fig.savefig(figdir / f"cal_{rec['id']}.png"); plt.close(fig)
     return out
 
@@ -369,7 +369,7 @@ def motor_effect(rec):
     on = (rec["flags"][w] & (1 << 9)) != 0
     t = rec["t"][w]
     if on.sum() < 3:
-        return {"rec": rec["id"], "note": "в покое калибровки нет отсчётов с флагом мотора"}
+        return {"rec": rec["id"], "note": "no samples with the motor flag in the still part of the calibration"}
     # "off" = still samples away from pulses by more than 0.5 s
     on_t = t[on]
     far = np.array([np.min(np.abs(on_t - x)) > 0.5 for x in t])
@@ -387,11 +387,11 @@ def motor_effect(rec):
             k = np.argmax(dev < 3) if (dev < 3).any() else None
             if k is not None:
                 rec_times.append(t[e + 1 + k] - t[e])
-        rows.append({"датчик": i + 1, "сдвиг поля при импульсе, мкТл": shift,
-                     "шум в покое, мкТл (СКО)": float(np.linalg.norm(sd_off)),
-                     "шум во время импульса, мкТл (СКО)": float(np.linalg.norm(np.std(m[on], axis=0))),
-                     "возврат после импульса, с (медиана)": float(np.median(rec_times)) if rec_times else np.nan,
-                     "импульсов": len(ends)})
+        rows.append({"sensor": i + 1, "field shift during a pulse, µT": shift,
+                     "noise at rest, µT (SD)": float(np.linalg.norm(sd_off)),
+                     "noise during a pulse, µT (SD)": float(np.linalg.norm(np.std(m[on], axis=0))),
+                     "recovery after a pulse, s (median)": float(np.median(rec_times)) if rec_times else np.nan,
+                     "pulses": len(ends)})
     return {"rec": rec["id"], "rows": rows}
 
 
@@ -439,7 +439,7 @@ def plot_confusion(yt, yp, title, path):
     fig, ax = plt.subplots(figsize=(4.4, 4))
     ax.imshow(m, cmap="Blues")
     ax.set_xticks(range(12), KEYS); ax.set_yticks(range(12), KEYS)
-    ax.set_xlabel("распознано"); ax.set_ylabel("на самом деле")
+    ax.set_xlabel("recognised"); ax.set_ylabel("actual")
     for i in range(12):
         for j in range(12):
             if m[i, j]:
@@ -481,17 +481,17 @@ def main():
                     continue
             recs.append(load(p))
         except Exception as e:  # noqa: BLE001
-            print(f"пропускаю {p.name}: {e}")
-    md = ["# Анализ записей капсулы", ""]
+            print(f"skipping {p.name}: {e}")
+    md = ["# Capsule recordings: analysis", ""]
     if not recs:
-        md.append(f"В `{root}` нет записей капсулы (format telehaptic/1).")
+        md.append(f"No capsule recordings (format telehaptic/1) in `{root}`.")
         (out / "report.md").write_text("\n".join(md), encoding="utf-8")
-        print("нет записей")
+        print("no recordings")
         return
     if any(r["synthetic"] for r in recs):
-        md += ["**ВНИМАНИЕ: среди записей есть синтетические (tools/make_fake_data.py). Числа ниже ничего не говорят о капсуле.**", ""]
+        md += ["**WARNING: some recordings are synthetic (tools/make_fake_data.py). The numbers below say nothing about the capsule.**", ""]
 
-    md += ["## Записи и качество потока", "", md_table(pd.DataFrame([quality(r) for r in recs]), "{:.2f}"), ""]
+    md += ["## Recordings and stream quality", "", md_table(pd.DataFrame([quality(r) for r in recs]), "{:.2f}"), ""]
 
     keyrecs = [r for r in recs if r["kind"] in ("KEYS", "NOMAG")]
     df = pd.concat([trials(r) for r in keyrecs], ignore_index=True) if keyrecs else pd.DataFrame()
@@ -499,7 +499,7 @@ def main():
     feat_names = list(FEATURES) if two else ["s1"]
 
     # ---- recognition
-    md += ["## Распознавание 12 клавиш", "", f"Сравнение: {STAND}. Случайное угадывание — 8%.", ""]
+    md += ["## Recognition of the 12 keys", "", f"Reference: {STAND}. Chance is 8%.", ""]
     keys_df = df[df["kind"] == "KEYS"] if len(df) else df
     table_plain = keys_df[(keys_df["posture"] == "table") & (~keys_df["rewear"])] if len(keys_df) else keys_df
     table_rew = keys_df[(keys_df["posture"] == "table") & (keys_df["rewear"])] if len(keys_df) else keys_df
@@ -507,27 +507,27 @@ def main():
     rows, best = [], {}
     for feat in feat_names:
         for model in MODELS:
-            r = {"признаки": FEATURES[feat], "модель": model}
+            r = {"features": FEATURES[feat], "model": model}
             yt, yp = scheme_within(keys_df, feat, model) if len(keys_df) else ([], [])
-            a = acc_row("", yt, yp); r["внутри записи, %"] = a["точность, %"]; r["внутри: интервал"] = a["95% интервал"]
+            a = acc_row("", yt, yp); r["within a recording, %"] = a["accuracy, %"]; r["within: interval"] = a["95% interval"]
             best[(model, feat, "within")] = (yt, yp)
             yt, yp = scheme_transfer(table_plain, table_rew, feat, model) if len(table_plain) and len(table_rew) else ([], [])
-            a = acc_row("", yt, yp); r["повторное надевание, %"] = a["точность, %"]; r["надевание: интервал"] = a["95% интервал"]
+            a = acc_row("", yt, yp); r["after re-wearing, %"] = a["accuracy, %"]; r["re-wearing: interval"] = a["95% interval"]
             best[(model, feat, "rewear")] = (yt, yp)
             yt, yp = scheme_transfer(table_plain, down, feat, model) if len(table_plain) and len(down) else ([], [])
-            a = acc_row("", yt, yp); r["другая поза, %"] = a["точность, %"]; r["поза: интервал"] = a["95% интервал"]
+            a = acc_row("", yt, yp); r["other posture, %"] = a["accuracy, %"]; r["posture: interval"] = a["95% interval"]
             best[(model, feat, "posture")] = (yt, yp)
             rows.append(r)
-    md += ["Внутри записи: обучение на трёх блоках, проверка на четвёртом, по всем записям «Клавиши».",
-           "Повторное надевание: обучение на «Клавиши, на столе», проверка на «Клавиши, на столе, после повторного надевания».",
-           "Другая поза: обучение на «Клавиши, на столе», проверка на «Клавиши, рука вдоль тела».", "",
+    md += ["Within a recording: train on three blocks, test on the fourth, over all Keys recordings.",
+           "After re-wearing: train on Keys, table; test on Keys, table, after putting the capsule on again.",
+           "Other posture: train on Keys, table; test on Keys, arm along the body.", "",
            md_table(pd.DataFrame(rows)), "",
-           "Признаки с направлением гравитации привязаны к позе руки, поэтому на другую позу они переносятся плохо по самой своей природе.", ""]
+           "Features with the gravity direction are tied to the hand posture, so by their nature they transfer badly to another posture.", ""]
     if not len(table_rew):
-        md.append("Записи после повторного надевания нет — перенос на надевание не посчитан.")
+        md.append("No recording after re-wearing: the re-wearing transfer is not computed.")
     if not len(down):
-        md.append("Записи «рука вдоль тела» нет — перенос на позу не посчитан.")
-    for scheme, title in (("within", "внутри записи"), ("rewear", "повторное надевание"), ("posture", "другая поза")):
+        md.append("No arm-along-the-body recording: the posture transfer is not computed.")
+    for scheme, title in (("within", "within a recording"), ("rewear", "after re-wearing"), ("posture", "other posture")):
         yt, yp = best.get((PRIMARY[0], PRIMARY[1] if two else "s1", scheme), ([], []))
         if yt:
             name = f"confusion_{scheme}.png"
@@ -537,85 +537,85 @@ def main():
 
     # ---- geometry vs noise
     if len(keys_df):
-        md += ["## Разнос клавиш и уплывание", ""]
+        md += ["## Key spacing and drift", ""]
         g = []
         for feat in feat_names:
             nd = neighbour_distances(table_plain if len(table_plain) else keys_df, feat)
             if nd is None or not len(nd):
                 continue
             sd_cols = [f"sd1{c}" for c in "xyz"]
-            g.append({"признаки": FEATURES[feat], "соседние клавиши, мкТл (медиана)": float(np.median(nd)),
-                      "соседние клавиши, мкТл (минимум)": float(np.min(nd)),
-                      "уплывание центра клавиши от блока к блоку, мкТл": block_drift(table_plain if len(table_plain) else keys_df, feat),
-                      "шум при удержании, мкТл (датчик 1)": float(np.median(np.linalg.norm(keys_df[sd_cols].to_numpy(), axis=1)))})
-        md += [md_table(pd.DataFrame(g)), "", "Стенд для сравнения: соседние клавиши 10–12 мкТл, уплывание ≈ 13 мкТл, шум 0,4 мкТл.", ""]
+            g.append({"features": FEATURES[feat], "neighbouring keys, µT (median)": float(np.median(nd)),
+                      "neighbouring keys, µT (minimum)": float(np.min(nd)),
+                      "key centre drift block to block, µT": block_drift(table_plain if len(table_plain) else keys_df, feat),
+                      "noise during a hold, µT (sensor 1)": float(np.median(np.linalg.norm(keys_df[sd_cols].to_numpy(), axis=1)))})
+        md += [md_table(pd.DataFrame(g)), "", "Phone stand for reference: neighbouring keys 10–12 µT apart, drift ≈ 13 µT, noise 0.4 µT.", ""]
 
     # ---- calibration
     cals = [c for c in (calibration(r, figs) for r in recs if r["kind"] == "CAL") if c]
-    md += ["## Калибровка и поле Земли в разности", ""]
+    md += ["## Calibration and the Earth field left in the difference", ""]
     if not cals:
-        md.append("Записи калибровки нет или в ней слишком мало данных.")
+        md.append("No calibration recording, or too little data in it.")
     for c in cals:
-        lines = [f"**{c['rec']}**, отсчётов вращения без мотора: {c['n']}. Подгонка на первой половине, проверка на второй.", ""]
+        lines = [f"**{c['rec']}**, turning samples without the motor: {c['n']}. Fit on the first half, check on the second.", ""]
         for i in (1, 2):
             if f"m{i}_radius" in c:
-                lines.append(f"- Датчик {i}: смещение (жёсткое железо) {np.round(c[f'm{i}_offset'], 1)} мкТл, "
-                             f"модуль поля после калибровки {c[f'm{i}_radius']:.1f} мкТл (для Португалии ожидается около 44), "
-                             f"разброс модуля {c[f'm{i}_mod_sd']:.2f} мкТл; при вращении поле одного датчика уходит до "
-                             f"{c[f'm{i}_turn_p95']:.1f} мкТл (95-й процентиль).")
+                lines.append(f"- Sensor {i}: offset (hard iron) {np.round(c[f'm{i}_offset'], 1)} µT, "
+                             f"field magnitude after calibration {c[f'm{i}_radius']:.1f} µT (about 44 expected in Portugal), "
+                             f"magnitude spread {c[f'm{i}_mod_sd']:.2f} µT; while the hand turns, one sensor alone moves by up to "
+                             f"{c[f'm{i}_turn_p95']:.1f} µT (95th percentile).")
         if "cal_diff_rms" in c:
-            lines += [f"- Взаимный поворот осей датчиков после калибровки: {c['rot_deg']:.1f}°.",
-                      f"- **Поле Земли в разности при вращении: {c['cal_diff_rms']:.2f} мкТл СКО, {c['cal_diff_p95']:.2f} мкТл 95-й процентиль** "
-                      f"(без калибровки: {c['raw_diff_rms']:.2f} / {c['raw_diff_p95']:.2f}).",
-                      "- Сравнение: соседние клавиши на стенде разнесены на 10–12 мкТл; у капсулы — см. таблицу выше.",
-                      f"![калибровка](fig/cal_{c['rec']}.png)"]
+            lines += [f"- Rotation between the two sensors' axes after calibration: {c['rot_deg']:.1f}°.",
+                      f"- **Earth field left in the difference while the hand turns: {c['cal_diff_rms']:.2f} µT RMS, {c['cal_diff_p95']:.2f} µT 95th percentile** "
+                      f"(uncalibrated: {c['raw_diff_rms']:.2f} / {c['raw_diff_p95']:.2f}).",
+                      "- Reference: neighbouring keys were 10–12 µT apart on the phone stand; for the capsule see the table above.",
+                      f"![calibration](fig/cal_{c['rec']}.png)"]
         md += lines + [""]
 
     # ---- no magnet
     nomag = df[df["kind"] == "NOMAG"] if len(df) else df
-    md += ["## Без магнита", ""]
+    md += ["## Without the magnet", ""]
     if len(nomag):
         r = []
         for feat in feat_names:
             yt, yp = scheme_within(nomag, feat, "LDA")
-            r.append({"признаки": FEATURES[feat], **{k: v for k, v in acc_row("LDA внутри записи", yt, yp).items() if k != "проверка"}})
-        md += [md_table(pd.DataFrame(r)), "", "Должно быть около 8% (случайное угадывание). Если заметно больше — сигнал идёт от позы руки, а не от магнита.", ""]
+            r.append({"features": FEATURES[feat], **{k: v for k, v in acc_row("LDA within a recording", yt, yp).items() if k != "check"}})
+        md += [md_table(pd.DataFrame(r)), "", "Should be about 8% (chance). Clearly more means the signal comes from the hand posture, not from the magnet.", ""]
     else:
-        md.append("Записи без магнита пока нет.")
+        md.append("No recording without the magnet yet.")
 
     # ---- motor
-    md += ["## Вибромотор", ""]
+    md += ["## Vibration motor", ""]
     mots = [m for m in (motor_effect(r) for r in recs if r["kind"] == "CAL") if m]
     if not mots:
-        md.append("Нет записи калибровки с импульсами мотора.")
+        md.append("No calibration recording with motor pulses.")
     for m in mots:
         if "rows" in m:
-            md += [f"**{m['rec']}**, покой в начале калибровки:", "", md_table(pd.DataFrame(m["rows"]), "{:.2f}"), ""]
+            md += [f"**{m['rec']}**, still part at the start of the calibration:", "", md_table(pd.DataFrame(m["rows"]), "{:.2f}"), ""]
         else:
             md.append(f"{m['rec']}: {m['note']}")
     flagged = [(r["id"], int(np.sum(r["flags"] & (1 << 9) != 0))) for r in recs if r["kind"] != "CAL"]
     if any(n for _, n in flagged):
-        md.append("Отсчёты с включённым мотором в остальных записях: " + ", ".join(f"{i}: {n}" for i, n in flagged if n))
+        md.append("Samples with the motor on in the other recordings: " + ", ".join(f"{i}: {n}" for i, n in flagged if n))
     md.append("")
 
     # ---- accelerometer
-    md += ["## Акселерометр в момент касания", ""]
+    md += ["## Accelerometer at the moment of touch", ""]
     acc = [x for r in keyrecs if r["kind"] == "KEYS" for x in accel_at_touch(r)]
     if acc:
         a = pd.DataFrame(acc)
         q = a[["on", "hold", "rest"]].quantile([0.1, 0.5, 0.9]).T
-        q.columns = ["10%", "медиана", "90%"]
-        q.index = ["момент касания", "удержание", "покой перед касанием"]
-        md += [f"Пик ускорения после фильтра верхних частот (м/с²), касаний с чётким началом: {len(a)}.", "",
-               md_table(q.reset_index().rename(columns={"index": "окно"}), "{:.3f}"), "",
-               f"Доля касаний, где пик в момент касания больше удвоенного пика при удержании: {100 * np.mean(a['on'] > 2 * a['hold']):.0f}%.",
-               "На стенде: медиана 0,10 в момент касания и 0,10 при удержании, такой всплеск — в 25% касаний. "
-               "Но там телефон прижимали к руке другой рукой, а касания были очень плавными, так что прямого сравнения нет.", ""]
+        q.columns = ["10%", "median", "90%"]
+        q.index = ["touch onset", "hold", "rest before the touch"]
+        md += [f"High-passed acceleration peak (m/s²), touches with a clear onset: {len(a)}.", "",
+               md_table(q.reset_index().rename(columns={"index": "window"}), "{:.3f}"), "",
+               f"Share of touches where the onset peak is more than twice the hold peak: {100 * np.mean(a['on'] > 2 * a['hold']):.0f}%.",
+               "Phone stand: median 0.10 at the onset and 0.10 during the hold, such a peak in 25% of touches. "
+               "But there the phone was held against the hand by the other hand and the touches were very gentle, so there is no direct comparison.", ""]
     else:
-        md.append("Нет касаний с чётким началом.")
+        md.append("No touches with a clear onset.")
 
     (out / "report.md").write_text("\n".join(md), encoding="utf-8")
-    print(f"отчёт: {out / 'report.md'}")
+    print(f"report: {out / 'report.md'}")
 
 
 if __name__ == "__main__":

@@ -58,24 +58,24 @@ import kotlinx.coroutines.delay
 fun LearnCards(nav: Nav) {
     val app = App.get()
     val s by app.brain.summary.collectAsState()
-    Section("Обучение") {
+    Section("Training") {
         if (s.trained) {
-            Text("Модель обучена", fontWeight = FontWeight.SemiBold)
-            if (s.total > 0) Muted("Узнаёт ${s.correct} из ${s.total} касаний · ${s.date}")
+            Text("Model trained", fontWeight = FontWeight.SemiBold)
+            if (s.total > 0) Muted("Recognises ${s.correct} of ${s.total} touches · ${s.date}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { nav.go(Screen.Retrain) }) { Text("Дообучить") }
-                TextButton(onClick = { nav.go(Screen.Train) }) { Text("Обучить заново") }
+                OutlinedButton(onClick = { nav.go(Screen.Retrain) }) { Text("Retrain") }
+                TextButton(onClick = { nav.go(Screen.Train) }) { Text("Train from scratch") }
             }
         } else {
-            Muted("Около 4 минут: 24 касания с удержанием, потом 24 быстрых. Модель учится прямо на телефоне.")
-            Button(onClick = { nav.go(Screen.Train) }, modifier = Modifier.fillMaxWidth()) { Text("Начать обучение") }
+            Muted("About 4 minutes: 24 touches with a hold, then 24 quick taps. The model learns right on the phone.")
+            Button(onClick = { nav.go(Screen.Train) }, modifier = Modifier.fillMaxWidth()) { Text("Start training") }
         }
     }
-    Section("Набор") {
+    Section("Typing") {
         if (s.trained) {
-            Muted("Набирайте текст вслепую. Каждое принятое касание капсула отмечает щелчком.")
-            Button(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Начать набор") }
-        } else Muted("Станет доступен после обучения.")
+            Muted("Type without looking. The capsule clicks on every accepted touch.")
+            Button(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start typing") }
+        } else Muted("Available after training.")
     }
 }
 
@@ -90,20 +90,20 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
     var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) { while (true) { now = android.os.SystemClock.elapsedRealtime(); delay(100) } }
     BackHandler(enabled = app.training.active) { }
-    val title = if (retrain || u.retrain) "Дообучение" else "Обучение"
+    val title = if (retrain || u.retrain) "Retraining" else "Training"
 
     Page(title, nav = if (app.training.active) null else nav) {
         if (u.error.isNotEmpty()) {
             Text(u.error, color = Palette.bad)
-            Button(onClick = { app.training.close(); nav.back() }) { Text("Понятно") }
+            Button(onClick = { app.training.close(); nav.back() }) { Text("OK") }
             return@Page
         }
         when (u.phase) {
             Training.Phase.IDLE -> if (retrain) RetrainIntro(sum.weakKeys) else TrainIntro()
             Training.Phase.HOLDS, Training.Phase.TAPS -> {
-                if (!cap.status.linked) Text("Связь с капсулой потеряна. Переподключаюсь…", color = Palette.bad)
+                if (!cap.status.linked) Text("Capsule link lost. Reconnecting…", color = Palette.bad)
                 LinearProgressIndicator(progress = { if (u.total > 0) u.index.toFloat() / u.total else 0f }, modifier = Modifier.fillMaxWidth())
-                Muted(if (u.phase == Training.Phase.HOLDS) "С удержанием · ${u.index + 1} из ${u.total}" else "Быстрые касания · ${u.index + 1} из ${u.total}")
+                Muted(if (u.phase == Training.Phase.HOLDS) "With a hold · ${u.index + 1} of ${u.total}" else "Quick taps · ${u.index + 1} of ${u.total}")
                 val mark = when {
                     u.phase == Training.Phase.TAPS && now < u.flashUntil -> Mark.RECOGNIZED
                     u.phase == Training.Phase.HOLDS && u.holdStep == Training.HoldStep.HOLD -> Mark.HOLD
@@ -114,29 +114,29 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
                     Text(u.key.ifEmpty { "·" }, fontSize = 64.sp, fontWeight = FontWeight.Bold, color = keyColor())
                     Spacer(Modifier.width(16.dp))
                     Column {
-                        if (u.key.isNotEmpty()) { Text(Keys.finger(u.key) + " палец", fontWeight = FontWeight.SemiBold); Muted(Keys.phalanx(u.key)) }
+                        if (u.key.isNotEmpty()) { Text(Keys.finger(u.key) + " finger", fontWeight = FontWeight.SemiBold); Muted(Keys.phalanx(u.key)) }
                     }
                 }
                 Text(
                     when {
-                        u.paused -> "Пауза"
-                        u.phase == Training.Phase.TAPS -> "Коснитесь и отпустите"
-                        u.holdStep == Training.HoldStep.HOLD -> "Держите"
-                        u.holdStep == Training.HoldStep.REST -> "Отпустите"
-                        else -> "Приготовьтесь"
+                        u.paused -> "Paused"
+                        u.phase == Training.Phase.TAPS -> "Touch and release"
+                        u.holdStep == Training.HoldStep.HOLD -> "Hold"
+                        u.holdStep == Training.HoldStep.REST -> "Release"
+                        else -> "Get ready"
                     }, fontSize = 20.sp,
                 )
                 if (u.hint.isNotEmpty()) Text(u.hint, color = Palette.warn)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { app.training.pause(!u.paused) }) { Text(if (u.paused) "Продолжить" else "Пауза") }
-                    OutlinedButton(onClick = { app.training.repeatLast() }) { Text("Повторить") }
-                    if (u.phase == Training.Phase.TAPS) TextButton(onClick = { app.training.skip() }) { Text("Пропустить") }
+                    OutlinedButton(onClick = { app.training.pause(!u.paused) }) { Text(if (u.paused) "Resume" else "Pause") }
+                    OutlinedButton(onClick = { app.training.repeatLast() }) { Text("Repeat") }
+                    if (u.phase == Training.Phase.TAPS) TextButton(onClick = { app.training.skip() }) { Text("Skip") }
                 }
-                TextButton(onClick = { app.training.cancel(); nav.back() }) { Text("Прервать", color = Palette.bad) }
+                TextButton(onClick = { app.training.cancel(); nav.back() }) { Text("Cancel", color = Palette.bad) }
             }
             Training.Phase.FITTING -> {
                 CircularProgressIndicator()
-                Text("Обучаю модель…")
+                Text("Training the model…")
             }
             Training.Phase.RESULT -> ResultBlock(u, nav)
         }
@@ -148,7 +148,7 @@ private fun MagnetAndDistance() {
     val app = App.get()
     var magnet by remember { mutableStateOf(app.prefs.magnet) }
     var distance by remember { mutableStateOf(if (app.prefs.distanceMm > 0) app.prefs.distanceMm.toString() else "") }
-    Section("Магнит и датчики") {
+    Section("Magnet and sensors") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Prefs.MAGNETS.forEach { (code, label) ->
                 FilterChip(selected = magnet == code, onClick = { magnet = code; app.prefs.magnet = code }, label = { Text(label.substringAfter(' ')) })
@@ -157,7 +157,7 @@ private fun MagnetAndDistance() {
         OutlinedTextField(
             value = distance,
             onValueChange = { v -> distance = v.filter { it.isDigit() }.take(3); app.prefs.distanceMm = distance.toIntOrNull() ?: 0 },
-            label = { Text("Расстояние между датчиками, мм") },
+            label = { Text("Distance between the sensors, mm") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true, modifier = Modifier.fillMaxWidth(),
         )
@@ -169,10 +169,10 @@ private fun readiness(): String {
     val app = App.get()
     val cap by app.capsule.ui.collectAsState()
     return when {
-        !cap.status.linked -> "Подключите капсулу на главном экране."
-        cap.mags.isEmpty() -> "Капсула не нашла магнитометров. Откройте Диагностику."
-        app.prefs.magnet.isEmpty() -> "Выберите магнит."
-        app.prefs.distanceMm <= 0 -> "Введите расстояние между датчиками."
+        !cap.status.linked -> "Connect the capsule on the main screen."
+        cap.mags.isEmpty() -> "The capsule found no magnetometers. Open Diagnostics."
+        app.prefs.magnet.isEmpty() -> "Choose the magnet."
+        app.prefs.distanceMm <= 0 -> "Enter the distance between the sensors."
         else -> ""
     }
 }
@@ -181,14 +181,14 @@ private fun readiness(): String {
 private fun TrainIntro() {
     val app = App.get()
     Section {
-        Text("Сначала 24 касания с удержанием: одиночный сигнал — коснитесь и держите, двойной — отпустите.")
-        Text("Потом 24 быстрых касания в своём темпе. Капсула щёлкает, когда касание принято.")
-        Muted("Около 4 минут. Рука в удобном положении, магнит на ногте.")
+        Text("First 24 touches with a hold: one beep, touch and hold; two beeps, release.")
+        Text("Then 24 quick taps at your own pace. The capsule clicks when a touch is accepted.")
+        Muted("About 4 minutes. Hand in a comfortable position, magnet on the nail.")
     }
     MagnetAndDistance()
     val missing = readiness()
     if (missing.isNotEmpty()) Text(missing, color = Palette.warn)
-    Button(onClick = { app.training.startTraining() }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Начать") }
+    Button(onClick = { app.training.startTraining() }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start") }
 }
 
 @Composable
@@ -196,17 +196,17 @@ private fun RetrainIntro(weak: List<String>) {
     val app = App.get()
     val missing = readiness()
     Section {
-        Text("Короткий сеанс быстрых касаний. Модель подстроится под то, как сидит капсула сейчас.")
-        Muted("Подходит после повторного надевания и для клавиш, которые путаются.")
+        Text("A short session of quick taps. The model adjusts to how the capsule sits now.")
+        Muted("Use it after putting the capsule on again and for keys that get confused.")
     }
     if (missing.isNotEmpty()) Text(missing, color = Palette.warn)
     Button(onClick = { app.training.startRetrain(Keys.ALL, 2) }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth()) {
-        Text("Все клавиши, по 2 касания (около минуты)")
+        Text("All keys, 2 taps each (about a minute)")
     }
     if (weak.isNotEmpty()) {
         val keys = weak.take(4)
         OutlinedButton(onClick = { app.training.startRetrain(keys, 4) }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth()) {
-            Text("Только ${keys.joinToString(", ")}, по 4 касания")
+            Text("Only ${keys.joinToString(", ")}, 4 taps each")
         }
     }
 }
@@ -216,43 +216,39 @@ private fun ResultBlock(u: Training.Ui, nav: Nav) {
     val app = App.get()
     val r = u.report ?: return
     if (u.before != null) {
-        Text("Было ${u.before.correct} из ${u.before.total} → стало ${r.correct} из ${r.total}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Muted("«Было» — старая модель на новых касаниях. «Стало» — новая модель, каждое касание проверено без него самого.")
-        if (r.correct < u.before.correct) Text("Стало хуже. Попробуйте ещё раз: касайтесь так же, как при наборе.", color = Palette.warn)
+        Text("Was ${u.before.correct} of ${u.before.total} → now ${r.correct} of ${r.total}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Muted("Was: the old model on the new taps. Now: the new model, each tap checked without itself in training.")
+        if (r.correct < u.before.correct) Text("It got worse. Try again, touching the way you do when typing.", color = Palette.warn)
     } else {
-        Text("Узнаётся ${r.correct} из ${r.total} касаний", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Muted("Проверка на быстрых касаниях, которых модель не видела при обучении.")
+        Text("Recognises ${r.correct} of ${r.total} touches", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Muted("Checked on quick taps the model did not see in training.")
     }
     ConfusionList(r)
     val weak = r.wrongKeys.take(3)
     if (weak.isNotEmpty()) {
-        Section { Text("Совет: дообучите ${weak.joinToString(", ")} — по 4 касания, около минуты.") }
+        Section { Text("Tip: retrain ${weak.joinToString(", ")}, 4 taps each, about a minute.") }
         Button(onClick = { app.training.close(); app.training.startRetrain(weak, 4) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Дообучить ${weak.joinToString(", ")}")
+            Text("Retrain ${weak.joinToString(", ")}")
         }
     }
-    OutlinedButton(onClick = { app.training.close(); nav.reset(Screen.Typing) }, modifier = Modifier.fillMaxWidth()) { Text("Перейти к набору") }
-    TextButton(onClick = { app.training.close(); nav.reset(Screen.Home) }, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
+    OutlinedButton(onClick = { app.training.close(); nav.reset(Screen.Typing) }, modifier = Modifier.fillMaxWidth()) { Text("Go to typing") }
+    TextButton(onClick = { app.training.close(); nav.reset(Screen.Home) }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
 }
 
 @Composable
 private fun ConfusionList(r: Evaluation.Report) {
     if (r.confusions.isEmpty()) return
-    Section("Чаще всего путаются") {
+    Section("Most often confused") {
         r.confusions.take(3).forEach { (a, b, n) ->
             Row(Modifier.fillMaxWidth()) {
-                Text("$a и $b", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("$a and $b", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Muted(times(n))
             }
         }
     }
 }
 
-private fun times(n: Int) = when {
-    n % 10 == 1 && n % 100 != 11 -> "$n раз"
-    n % 10 in 2..4 && n % 100 !in 12..14 -> "$n раза"
-    else -> "$n раз"
-}
+private fun times(n: Int) = if (n == 1) "1 time" else "$n times"
 
 // ---------------------------------------------------------------- typing
 
@@ -273,15 +269,15 @@ fun TypingScreen(nav: Nav) {
 
     if (ask) AlertDialog(
         onDismissRequest = { ask = false },
-        title = { Text("Исправления") },
-        text = { Text("Добавить ${u.corrections} исправлений в обучение? Это касания, которые вы стёрли и набрали другой клавишей.") },
-        confirmButton = { TextButton(onClick = { app.typing.applyCorrections(true); ask = false; nav.back() }) { Text("Добавить") } },
-        dismissButton = { TextButton(onClick = { app.typing.applyCorrections(false); ask = false; nav.back() }) { Text("Не нужно") } },
+        title = { Text("Corrections") },
+        text = { Text("Add ${u.corrections} corrections to training? These are touches you erased and typed again as another key.") },
+        confirmButton = { TextButton(onClick = { app.typing.applyCorrections(true); ask = false; nav.back() }) { Text("Add") } },
+        dismissButton = { TextButton(onClick = { app.typing.applyCorrections(false); ask = false; nav.back() }) { Text("No") } },
     )
 
-    Page("Набор", nav) {
-        if (!cap.status.linked) Text("Капсула не подключена.", color = Palette.warn)
-        if (!u.ready) Muted("Загружаю словарь…")
+    Page("Typing", nav) {
+        if (!cap.status.linked) Text("Capsule not connected.", color = Palette.warn)
+        if (!u.ready) Muted("Loading the dictionary…")
         Section {
             Text(u.text.ifEmpty { " " }, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
         }
@@ -293,19 +289,19 @@ fun TypingScreen(nav: Nav) {
             }
         }
         HandDiagram(u.lastKey, if (now < u.flashUntil) Mark.RECOGNIZED else Mark.NONE, Modifier.fillMaxWidth(0.75f).align(Alignment.CenterHorizontally))
-        Muted("0 — пробел · 1 — точка · * — другое слово · # — стереть")
+        Muted("0 space · 1 full stop · * next word · # erase")
         if (app.prefs.detailed && u.lastKey.isNotEmpty()) {
-            Muted("${u.lastKey} · ${f0(u.posterior * 100)}% · второй вариант ${u.second} (${f0(u.secondPosterior * 100)}%) · не похоже ни на одну клавишу: ${u.rejected}")
+            Muted("${u.lastKey} · ${f0(u.posterior * 100)}% · runner-up ${u.second} (${f0(u.secondPosterior * 100)}%) · not like any key: ${u.rejected}")
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
-                ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Телехаптика", u.text))
-            }) { Text("Копировать") }
+                ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Telehaptic", u.text))
+            }) { Text("Copy") }
             OutlinedButton(onClick = {
-                ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, u.text), "Поделиться"))
-            }) { Text("Поделиться") }
-            TextButton(onClick = { app.typing.clear() }) { Text("Очистить") }
+                ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, u.text), "Share"))
+            }) { Text("Share") }
+            TextButton(onClick = { app.typing.clear() }) { Text("Clear") }
         }
-        if (u.corrections > 0) Muted("Исправлений для дообучения: ${u.corrections}. Спрошу при выходе.")
+        if (u.corrections > 0) Muted("Corrections for retraining: ${u.corrections}. I will ask when you leave.")
     }
 }

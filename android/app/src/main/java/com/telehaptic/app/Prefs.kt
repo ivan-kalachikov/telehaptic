@@ -34,7 +34,7 @@ class Prefs(ctx: Context) {
         set(v) = p.edit().putBoolean("auto_upload", v).apply()
 
     companion object {
-        val MAGNETS = listOf("4x1.5" to "диск 4×1,5 мм", "5x3" to "цилиндр 5×3 мм", "8x2" to "диск 8×2 мм")
-        fun magnetTitle(code: String) = MAGNETS.firstOrNull { it.first == code }?.second ?: "не выбран"
+        val MAGNETS = listOf("4x1.5" to "disc 4×1.5 mm", "5x3" to "cylinder 5×3 mm", "8x2" to "disc 8×2 mm")
+        fun magnetTitle(code: String) = MAGNETS.firstOrNull { it.first == code }?.second ?: "not chosen"
     }
 }

@@ -110,7 +110,7 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         val keyY = m?.let { lda -> lda.keys.map { k -> engine.segmenter.yOf(meanOf(all, k), engine.twoSensors) } } ?: emptyList()
         segParams = if (restY != null) Segmenter.Params.fromTraining(restY, keyY) else Segmenter.Params()
         val old = _summary.value
-        val date = SimpleDateFormat("d MMM, HH:mm", Locale.forLanguageTag("ru")).format(Date())
+        val date = SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date())
         _summary.value = Summary(
             trained = m != null, date = date,
             correct = report?.correct ?: old.correct, total = report?.total ?: old.total,

@@ -50,7 +50,7 @@ class Session(private val app: App) {
             val total = steps.last().atMs
             _ui.value = _ui.value.copy(phase = Phase.LEAD, id = id, startedAt = SystemClock.elapsedRealtime(),
                 totalMs = total, phaseEndsAt = SystemClock.elapsedRealtime() + (steps.getOrNull(1)?.atMs ?: 0))
-            app.cues.say(if (kind == Kind.CALIBRATION) "Калибровка. Снимите магнит. Держите кисть неподвижно." else "Приготовьтесь")
+            app.cues.say(if (kind == Kind.CALIBRATION) "Calibration. Take the magnet off. Keep the hand still." else "Get ready")
             for (s in steps) main.postAtTime({ run(s, plan, steps) }, token, t0 + s.atMs)
         }
     }
@@ -87,7 +87,7 @@ class Session(private val app: App) {
             "calib_start" -> {
                 rec.event("calib_start")
                 app.cues.press()
-                app.cues.say("Медленно вращайте кисть во все стороны")
+                app.cues.say("Slowly turn the hand in all directions")
                 _ui.value = _ui.value.copy(phase = Phase.ROTATE, phaseEndsAt = now + plan.rotateMs)
             }
             "calib_end" -> {
@@ -97,7 +97,7 @@ class Session(private val app: App) {
             "end" -> {
                 rec.event("end")
                 app.cues.end()
-                app.cues.say("Готово")
+                app.cues.say("Done")
                 finish(aborted = false)
             }
         }
@@ -106,7 +106,7 @@ class Session(private val app: App) {
     fun stop() {
         if (!running) return
         app.recorder.event("abort", _ui.value.trial)
-        app.cues.say("Остановлено")
+        app.cues.say("Stopped")
         finish(aborted = true)
     }
 
