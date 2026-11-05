@@ -119,6 +119,9 @@ class Session(private val app: App) {
         }
     }
 
+    /** For screenshots only. */
+    fun showForPreview(u: Ui) { _ui.value = u }
+
     /** Back to the start state after the result was seen. */
     fun reset() {
         if (!running) _ui.value = Ui()

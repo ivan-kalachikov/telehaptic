@@ -39,7 +39,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -52,4 +55,16 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
+    // Screenshots of the screens (run with -Pscreenshots): Robolectric native graphics.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+tasks.withType<Test>().configureEach {
+    if (!project.hasProperty("screenshots")) exclude("**/ScreenshotTest*")
+    systemProperty("screenshots.dir", rootProject.file("../docs/screens").absolutePath)
+    // Where Robolectric downloads Android images; override if Maven Central is not reachable.
+    (project.findProperty("robolectricRepo") as String?)?.let { systemProperty("robolectric.dependency.repo.url", it) }
 }

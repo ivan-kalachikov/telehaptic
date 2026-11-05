@@ -434,7 +434,12 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         handler.postDelayed({ tick() }, 100)
     }
 
+    /** For screenshots only: shows fixed state and stops live updates. */
+    @Volatile private var frozen = false
+    fun showForPreview(u: Ui) { frozen = true; _ui.value = u }
+
     private fun publish() {
+        if (frozen) return
         val s = lastSample
         val mags = info.mags
         val live = if (s != null && s.nMags == mags.size) {

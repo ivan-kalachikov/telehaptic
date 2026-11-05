@@ -100,6 +100,7 @@ object ScanText {
             p.getOrNull(3) == "HMC5883L" -> "${place(where)}: HMC5883L, этот чип прошивка не поддерживает"
             p.getOrNull(3) == "UNKNOWN" -> "${place(where)}: неизвестный чип по адресу ${p[2]}"
             p.getOrNull(2) == "OTHER" -> "${place(where)}: магнитометра нет, отвечают адреса ${p.drop(3).joinToString(" ")}"
+            p.getOrNull(2) == "EMPTY" && where == "ch2" -> "Канал 2 (запасной): датчика нет"
             p.getOrNull(2) == "EMPTY" -> "${place(where)}: датчик не отвечает. Проверьте ${wires(where)} и подтяжки 4,7 кОм к 3,3 В"
             p.getOrNull(2) == "MUX_ERROR" -> "${place(where)}: мультиплексор не переключился"
             else -> line
