@@ -1,66 +1,64 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 420" width="820" height="420" font-family="Helvetica, Arial, sans-serif">
-  <title>Keypad on the phalanges of four fingers</title>
-  <rect width="820" height="420" fill="#ffffff"/>
-  <g transform="translate(50 0)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 400" width="700" height="400" font-family="Helvetica, Arial, sans-serif">
+  <title>Phone keypad on the phalanges of four fingers</title>
+  <rect width="700" height="400" fill="#ffffff"/>
+  <!-- Palm side of the hand, fingers pointing right, 3 px per mm.
+       Rows top to bottom: index, middle, ring, little. Phalanges from the palm to the tip. -->
 
-  <!-- palm -->
-  <path d="M60 300 Q60 250 90 245 L330 245 Q360 250 360 300 L360 380 Q360 405 330 405 L90 405 Q60 405 60 380 Z" fill="#f2f4f8" stroke="#c9ced8" stroke-width="2"/>
-  <text x="210" y="335" text-anchor="middle" font-size="14" fill="#5b6170">palm side</text>
+  <!-- palm and wrist -->
+  <path d="M0 150 C70 140 170 104 296 90 Q336 86 340 112 L342 330 Q338 352 304 348 C200 338 96 324 0 316 Z"
+        fill="#f4f1ec" stroke="#cdc6bb" stroke-width="2"/>
 
-  <!-- fingers: index, middle, ring, little; phalanx near the palm at the bottom -->
-  <g stroke="#c9ced8" stroke-width="2" fill="#f7f8fb">
-    <rect x="72"  y="60"  width="62" height="190" rx="28"/>
-    <rect x="148" y="30"  width="62" height="220" rx="28"/>
-    <rect x="224" y="48"  width="62" height="202" rx="28"/>
-    <rect x="300" y="98"  width="56" height="152" rx="26"/>
+  <!-- fingers: x = knuckle, lengths of the phalanges in px -->
+  <g fill="#f4f1ec" stroke="#cdc6bb" stroke-width="2">
+    <rect x="318" y="92"  width="252" height="56" rx="26"/>   <!-- index  40/24/19 mm -->
+    <rect x="326" y="156" width="282" height="58" rx="27"/>   <!-- middle 45/28/20 mm -->
+    <rect x="320" y="222" width="270" height="56" rx="26"/>   <!-- ring   42/27/20 mm -->
+    <rect x="302" y="286" width="213" height="48" rx="22"/>   <!-- little 33/19/18 mm -->
   </g>
-  <g stroke="#c9ced8" stroke-width="1.5">
-    <line x1="80" y1="187" x2="126" y2="187"/><line x1="80" y1="124" x2="126" y2="124"/>
-    <line x1="156" y1="177" x2="202" y2="177"/><line x1="156" y1="104" x2="202" y2="104"/>
-    <line x1="232" y1="183" x2="278" y2="183"/><line x1="232" y1="116" x2="278" y2="116"/>
-    <line x1="307" y1="200" x2="349" y2="200"/><line x1="307" y1="149" x2="349" y2="149"/>
-  </g>
-  <g font-size="22" font-weight="bold" text-anchor="middle" fill="#16181d">
-    <text x="103" y="227">1</text><text x="103" y="164">2</text><text x="103" y="100">3</text>
-    <text x="179" y="222">4</text><text x="179" y="149">5</text><text x="179" y="76">6</text>
-    <text x="255" y="225">7</text><text x="255" y="158">8</text><text x="255" y="90">9</text>
-    <text x="328" y="233">*</text><text x="328" y="183">0</text><text x="328" y="132">#</text>
-  </g>
-  <rect x="152" y="108" width="54" height="66" rx="12" fill="none" stroke="#e08a1e" stroke-width="3"/>
-  <g font-size="12" text-anchor="middle" fill="#5b6170">
-    <text x="103" y="268">index</text><text x="179" y="268">middle</text><text x="255" y="268">ring</text><text x="328" y="268">little</text>
+  <!-- joints -->
+  <g stroke="#cdc6bb" stroke-width="1.6">
+    <line x1="438" y1="98"  x2="438" y2="142"/><line x1="510" y1="98"  x2="510" y2="142"/>
+    <line x1="461" y1="162" x2="461" y2="208"/><line x1="545" y1="162" x2="545" y2="208"/>
+    <line x1="446" y1="228" x2="446" y2="272"/><line x1="527" y1="228" x2="527" y2="272"/>
+    <line x1="401" y1="292" x2="401" y2="328"/><line x1="458" y1="292" x2="458" y2="328"/>
   </g>
 
-  <!-- thumb with the magnet, coming out of the palm on the index side -->
-  <path d="M66 372 Q20 360 4 300 Q-6 262 22 250 Q46 242 58 274 L72 318" fill="#f7f8fb" stroke="#c9ced8" stroke-width="2"/>
-  <rect x="2" y="262" width="24" height="12" rx="3" fill="#2c56c9" transform="rotate(-20 14 268)"/>
-  <text x="-40" y="232" font-size="12" fill="#2c56c9">magnet on the nail</text>
+  <!-- keys: digit and letters at the centre of each phalanx -->
+  <g text-anchor="middle" fill="#16181d">
+    <g font-size="22" font-weight="bold">
+      <text x="378" y="122">1</text><text x="474" y="122">2</text><text x="540" y="122">3</text>
+      <text x="393" y="187">4</text><text x="503" y="187">5</text><text x="576" y="187">6</text>
+      <text x="383" y="252">7</text><text x="486" y="252">8</text><text x="558" y="252">9</text>
+      <text x="351" y="313">*</text><text x="429" y="313">0</text><text x="486" y="313">#</text>
+    </g>
+    <g font-size="11" fill="#6b6459">
+      <text x="378" y="138">.</text><text x="474" y="138">abc</text><text x="540" y="138">def</text>
+      <text x="393" y="203">ghi</text><text x="503" y="203">jkl</text><text x="576" y="203">mno</text>
+      <text x="383" y="268">pqrs</text><text x="486" y="268">tuv</text><text x="558" y="268">wxyz</text>
+      <text x="351" y="327">next</text><text x="429" y="327">space</text><text x="486" y="327">⌫</text>
+    </g>
   </g>
 
-  <!-- legend -->
-  <g font-size="14" fill="#16181d" transform="translate(50 0)">
-    <text x="410" y="56" font-weight="bold" font-size="16">Phone keypad on four fingers</text>
-    <text x="410" y="88">finger = row:</text>
-    <text x="430" y="110" fill="#5b6170">index 1 2 3 · middle 4 5 6</text>
-    <text x="430" y="130" fill="#5b6170">ring 7 8 9 · little * 0 #</text>
-    <text x="410" y="162">phalanx = column, from the palm to the tip:</text>
-    <text x="430" y="184" fill="#5b6170">near the palm · middle · tip</text>
-    <text x="410" y="216">The thumb touches a phalanx; the magnet on its nail</text>
-    <text x="410" y="236">is seen by two magnetometers on the back of the hand.</text>
-    <text x="410" y="268">Highlighted: key 5 = middle finger, middle phalanx.</text>
+  <!-- the two magnetometers, on the back of the hand behind the knuckles (dashed = other side) -->
+  <g fill="none" stroke="#2c56c9" stroke-width="2" stroke-dasharray="5 4">
+    <rect x="246" y="112" width="42" height="34" rx="6"/>
+    <rect x="252" y="292" width="42" height="34" rx="6"/>
+  </g>
+  <g font-size="13" font-weight="bold" fill="#2c56c9" text-anchor="middle">
+    <text x="267" y="134">S1</text><text x="273" y="314">S2</text>
+  </g>
+  <g stroke="#2c56c9" stroke-width="1.2">
+    <line x1="230" y1="129" x2="230" y2="309"/>
+    <line x1="224" y1="129" x2="236" y2="129"/><line x1="224" y1="309" x2="236" y2="309"/>
   </g>
 
-  <!-- back of the hand with two sensors -->
-  <g transform="translate(480 300)">
-    <rect x="0" y="0" width="290" height="90" rx="22" fill="#f2f4f8" stroke="#c9ced8" stroke-width="2"/>
-    <text x="145" y="20" text-anchor="middle" font-size="12" fill="#5b6170">back of the hand (capsule)</text>
-    <rect x="34" y="34" width="44" height="30" rx="5" fill="#ffffff" stroke="#2c56c9" stroke-width="2"/>
-    <text x="56" y="54" text-anchor="middle" font-size="12" fill="#2c56c9">S1</text>
-    <rect x="212" y="34" width="44" height="30" rx="5" fill="#ffffff" stroke="#2c56c9" stroke-width="2"/>
-    <text x="234" y="54" text-anchor="middle" font-size="12" fill="#2c56c9">S2</text>
-    <line x1="84" y1="49" x2="206" y2="49" stroke="#5b6170" stroke-dasharray="4 3"/>
-    <text x="145" y="44" text-anchor="middle" font-size="11" fill="#5b6170">distance, mm</text>
-    <text x="56" y="82" text-anchor="middle" font-size="11" fill="#5b6170">index side</text>
-    <text x="234" y="82" text-anchor="middle" font-size="11" fill="#5b6170">little side</text>
-  </g>
+  <!-- thumb: from the base of the palm (index side) towards the fingers, magnet on the nail -->
+  <path d="M34 160 C58 96 132 52 222 32 C268 22 318 18 344 30 Q362 46 348 64 C306 72 262 78 222 88 C176 100 138 124 118 160 Z"
+        fill="#f4f1ec" stroke="none"/>
+  <path d="M34 160 C58 96 132 52 222 32 C268 22 318 18 344 30 Q362 46 348 64 C306 72 262 78 222 88 C176 100 138 124 118 160"
+        fill="none" stroke="#cdc6bb" stroke-width="2"/>
+  <path d="M212 40 Q222 62 222 86" fill="none" stroke="#cdc6bb" stroke-width="1.4"/>
+  <ellipse cx="322" cy="44" rx="20" ry="13" fill="#ebe4d9" stroke="#cdc6bb" stroke-width="1.4"/>
+  <rect x="309" y="37" width="26" height="14" rx="3" fill="#2c56c9"/>
+  <text x="322" y="48" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">N</text>
 </svg>

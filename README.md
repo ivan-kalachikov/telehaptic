@@ -4,7 +4,15 @@ Wearable eyes-free text input. The thumb touches the 12 phalanges of the other f
 
 ![Keypad on the phalanges](docs/keypad.svg)
 
-The two magnetometers sit across the back of the hand. The difference of their readings largely cancels the uniform Earth field, which shifted key centres by about 13 µT on the earlier single-sensor phone stand.
+Palm side, fingers pointing right:
+
+- **Finger = row:** index 1 2 3, middle 4 5 6, ring 7 8 9, little * 0 #.
+- **Phalanx = column**, from the palm to the tip, so the keys sit as on a phone keypad.
+- **Letters** as on phone keys (T9). 1 = full stop, 0 = space, * = next word, # = erase.
+- **N:** the magnet on the thumbnail.
+- **S1, S2 (dashed):** the two magnetometers on the back of the hand, behind the knuckles of the index and little fingers. The bar is the distance between them that the app asks for.
+
+The difference of the two sensors' readings largely cancels the uniform Earth field, which shifted key centres by about 13 µT on the earlier single-sensor phone stand. The sensors sit behind the knuckles rather than on the wrist because the magnet's field falls with the cube of the distance: about 20–40 mm from the thumbnail there versus 100 mm or more from a fingertip touch to the wrist.
 
 | Folder | Contents |
 |---|---|
