@@ -1,0 +1,116 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SEEED_INDEX: https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
+  FQBN: Seeeduino:nrf52:xiaonRF52840Sense
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The core calls adafruit-nrfutil on every compile and "python" for its uf2 step.
+      - name: Python tools
+        run: pip install adafruit-nrfutil
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Core and libraries
+        run: |
+          arduino-cli core update-index --additional-urls "$SEEED_INDEX"
+          arduino-cli core install Seeeduino:nrf52 --additional-urls "$SEEED_INDEX"
+          arduino-cli core list
+          if ! arduino-cli lib install "Seeed Arduino LSM6DS3@2.0.7"; then
+            arduino-cli config init --overwrite
+            arduino-cli config set library.enable_unsafe_install true
+            arduino-cli lib install --git-url https://github.com/Seeed-Studio/Seeed_Arduino_LSM6DS3.git
+          fi
+          arduino-cli lib list
+
+      - name: Compile
+        run: |
+          arduino-cli compile -b "$FQBN" \
+            --additional-urls "$SEEED_INDEX" \
+            --build-property "compiler.cpp.extra_flags=-DFW_BUILD=${{ github.run_number }}" \
+            --output-dir build firmware/telehaptic
+
+      # The core makes .uf2 only for the T1000-E board (tools/uf2conv/uf2_wrap.py),
+      # so convert the .hex with the core's own uf2conv.py. Family 0xADA52840 = nRF52840
+      # (microsoft/uf2 uf2families.json); addresses come from the .hex (app at 0x27000).
+      - name: Make .uf2
+        run: |
+          UF2CONV=$(find ~/.arduino15/packages/Seeeduino/hardware/nrf52 -name uf2conv.py | head -1)
+          echo "uf2conv: $UF2CONV"
+          python "$UF2CONV" -f 0xADA52840 -c -o build/telehaptic.uf2 build/telehaptic.ino.hex
+          ls -l build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: build/telehaptic.uf2
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests and APK
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+      - name: Rename
+        run: cp app/build/outputs/apk/debug/app-debug.apk telehaptic.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: android/telehaptic.apk
+
+  # Smoke test of the analysis on synthetic recordings (never real data).
+  analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r analysis/requirements.txt
+      - run: |
+          python tools/make_fake_data.py /tmp/fake
+          python analysis/analyze.py /tmp/fake
+          grep -q "Earth field left in the difference" report/report.md
+
+  release:
+    needs: [firmware, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - name: Publish release "latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -R out
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest out/firmware/telehaptic.uf2 out/android/telehaptic.apk \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Telehaptic, build ${{ github.run_number }}" \
+            --notes "Build ${{ github.run_number }} from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. telehaptic.uf2: double-tap reset on the XIAO, the XIAO-SENSE drive appears, copy the file onto it. telehaptic.apk: open this page on the phone, download and install."

@@ -1,27 +1,49 @@
-# Телехаптика
+# Telehaptic
 
-Носимый ввод текста вслепую. Большой палец касается 12 фаланг остальных пальцев. Раскладка как у кнопочного телефона: палец задаёт ряд (1 2 3 / 4 5 6 / 7 8 9 / * 0 #), фаланга — колонку от ладони к кончику.
+Wearable eyes-free text input. The thumb touches the 12 phalanges of the other four fingers, laid out like a phone keypad. A neodymium magnet on the thumbnail is seen by two magnetometers on the back of the hand. All computing happens in the Android app.
 
-На ногте большого пальца неодимовый магнит. На тыльной стороне кисти два магнитометра, разнесённые поперёк неё. Все вычисления делает Android-приложение.
+![Keypad on the phalanges](docs/keypad.svg)
 
-| Папка | Что внутри |
+The two magnetometers sit across the back of the hand. The difference of their readings largely cancels the uniform Earth field, which shifted key centres by about 13 µT on the earlier single-sensor phone stand.
+
+| Folder | Contents |
 |---|---|
-| `firmware/telehaptic/` | прошивка капсулы: XIAO nRF52840 Sense, ядро «Seeed nRF52 Boards» |
-| `android/` | приложение (ещё не написано) |
-| `analysis/` | анализ записей (ещё не написан) |
-| `data/` | записи |
-| `docs/protocol.md` | BLE-сервис, пакеты, команды |
+| `firmware/telehaptic/` | capsule firmware: Seeed XIAO nRF52840 Sense, core "Seeed nRF52 Boards" |
+| `android/` | app: capsule link, training, typing with T9, experiments, diagnostics |
+| `analysis/` | analysis of recordings: `python analysis/analyze.py data` → `report/report.md` |
+| `data/` | recordings |
+| `docs/protocol.md` | BLE service, packets, commands |
+| `docs/build-day.md` | build day checklist |
+| `docs/screens/` | app screens with example data |
+| `tools/make_fake_data.py` | synthetic recordings to test the analysis |
 
-## Готовые файлы
+## Hardware
 
-Каждый push собирается в GitHub Actions. Результат лежит в релизе
-[latest](https://github.com/ivan-kalachikov/telehaptic/releases/tag/latest).
+- Seeed XIAO nRF52840 Sense: BLE, on-board IMU LSM6DS3TR-C, LiPo charging.
+- TCA9548A I2C multiplexer at 0x70.
+- GY-271 modules with QMC5883P (0x2C); QMC5883L (0x0D) also supported. Channel 0: sensor 1 (index side), channel 1: sensor 2 (little finger side), channel 2: spare.
+- Grove vibration motor on D2.
+- LiPo 3.7 V 320 mAh with a switch.
 
-**Прошивка `telehaptic.uf2`:**
-1. Подключите XIAO к компьютеру кабелем USB-C.
-2. Дважды быстро нажмите кнопку reset. Появится диск `XIAO-SENSE`.
-3. Скопируйте на него файл.
+## Downloads
 
-Плата перезагрузится сама и начнёт работать с новой прошивкой.
+Every push is built by GitHub Actions. The result is in the release [latest](https://github.com/ivan-kalachikov/telehaptic/releases/tag/latest).
 
-Без приложения можно проверить так: откройте USB-порт XIAO в любом терминале на скорости 115200. Там будет отчёт о скане шины, а дважды в секунду — строка `LIVE` с полем каждого датчика в мкТл.
+**Firmware `telehaptic.uf2`:**
+1. Connect the XIAO with a USB-C data cable.
+2. Double-tap the reset button quickly. The `XIAO-SENSE` drive appears.
+3. Copy the file onto it.
+
+The board restarts by itself with the new firmware.
+
+**App `telehaptic.apk`:** open the release page on the phone, download the file and install it. A new build installs over the old one; the model and the recordings are kept.
+
+Without the app: open the XIAO USB port in any serial terminal at 115200. It prints the bus scan, then a `LIVE` line twice a second with each sensor's field in µT.
+
+## App screenshots
+
+Rendered by a Robolectric test with example data: `gradle testDebugUnitTest -Pscreenshots` in `android/`.
+
+| | | | |
+|---|---|---|---|
+| ![](docs/screens/1-home.png) | ![](docs/screens/10-train-hold.png) | ![](docs/screens/11-train-result.png) | ![](docs/screens/13-typing.png) |

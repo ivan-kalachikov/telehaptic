@@ -1,0 +1,129 @@
+package com.telehaptic.app
+
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import com.telehaptic.app.core.Kind
+import com.telehaptic.app.core.Keys
+import com.telehaptic.app.core.PlanSettings
+import com.telehaptic.app.core.Plans
+import com.telehaptic.app.core.Posture
+import com.telehaptic.app.core.Step
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.random.Random
+
+/** Runs one experiment recording: cues on time, events into the recording. Main thread. */
+class Session(private val app: App) {
+    enum class Phase { IDLE, STARTING, LEAD, ANNOUNCE, HOLD, REST, STILL, ROTATE, SAVING, DONE }
+
+    data class Ui(
+        val phase: Phase = Phase.IDLE,
+        val kind: Kind = Kind.KEYS,
+        val key: String = "",
+        val nextKey: String = "",
+        val trial: Int = -1,
+        val trials: Int = 0,
+        val phaseEndsAt: Long = 0,       // SystemClock.elapsedRealtime of the phase end, for countdowns
+        val startedAt: Long = 0,
+        val totalMs: Long = 0,
+        val id: String = "",
+        val result: RecordingResult? = null,
+    )
+
+    private val main = Handler(Looper.getMainLooper())
+    private val token = Any()
+    private val _ui = MutableStateFlow(Ui())
+    val ui: StateFlow<Ui> = _ui
+    val running get() = _ui.value.phase !in listOf(Phase.IDLE, Phase.DONE)
+
+    fun start(kind: Kind, posture: Posture?, rewear: Boolean, note: String) {
+        if (running || app.training.active || app.recorder.isOpen) return
+        val plan = PlanSettings()
+        val seed = Random.nextLong()
+        val seq = if (kind == Kind.CALIBRATION) emptyList() else Keys.sequence(plan.blocks, Random(seed))
+        val steps = if (kind == Kind.CALIBRATION) Plans.calibration(plan) else Plans.keys(seq, plan)
+        val spec = RecordingSpec(kind, posture, rewear, app.prefs.magnet, app.prefs.distanceMm, note, seed, seq, plan)
+        _ui.value = Ui(phase = Phase.STARTING, kind = kind, trials = seq.size)
+        app.recorder.start(spec) { id ->
+            val t0 = SystemClock.uptimeMillis()
+            val total = steps.last().atMs
+            _ui.value = _ui.value.copy(phase = Phase.LEAD, id = id, startedAt = SystemClock.elapsedRealtime(),
+                totalMs = total, phaseEndsAt = SystemClock.elapsedRealtime() + (steps.getOrNull(1)?.atMs ?: 0))
+            app.cues.say(if (kind == Kind.CALIBRATION) "Calibration. Take the magnet off. Keep the hand still." else "Get ready")
+            for (s in steps) main.postAtTime({ run(s, plan, steps) }, token, t0 + s.atMs)
+        }
+    }
+
+    private fun run(s: Step, plan: PlanSettings, steps: List<Step>) {
+        val rec = app.recorder
+        val now = SystemClock.elapsedRealtime()
+        when (s.event) {
+            "start" -> rec.event("start")
+            "announce" -> {
+                rec.event("announce", s.trial, s.key)
+                app.cues.sayKey(s.key)
+                _ui.value = _ui.value.copy(phase = Phase.ANNOUNCE, nextKey = s.key, key = "")
+            }
+            "press" -> {
+                rec.event("press", s.trial, s.key)
+                app.cues.press()
+                _ui.value = _ui.value.copy(phase = Phase.HOLD, key = s.key, nextKey = "", trial = s.trial, phaseEndsAt = now + plan.holdMs)
+            }
+            "release" -> {
+                rec.event("release", s.trial, s.key)
+                app.cues.release()
+                _ui.value = _ui.value.copy(phase = Phase.REST, key = "", phaseEndsAt = now + plan.restMs)
+            }
+            "still_start" -> {
+                rec.event("still_start")
+                app.cues.press()
+                _ui.value = _ui.value.copy(phase = Phase.STILL, phaseEndsAt = now + plan.stillMs)
+            }
+            "motor" -> {
+                rec.event("motor_cmd", s.trial, s.motorMs.toString())
+                app.capsule.motor(s.motorMs)
+            }
+            "calib_start" -> {
+                rec.event("calib_start")
+                app.cues.press()
+                app.cues.say("Slowly turn the hand in all directions")
+                _ui.value = _ui.value.copy(phase = Phase.ROTATE, phaseEndsAt = now + plan.rotateMs)
+            }
+            "calib_end" -> {
+                rec.event("calib_end")
+                app.cues.release()
+            }
+            "end" -> {
+                rec.event("end")
+                app.cues.end()
+                app.cues.say("Done")
+                finish(aborted = false)
+            }
+        }
+    }
+
+    fun stop() {
+        if (!running) return
+        app.recorder.event("abort", _ui.value.trial)
+        app.cues.say("Stopped")
+        finish(aborted = true)
+    }
+
+    private fun finish(aborted: Boolean) {
+        main.removeCallbacksAndMessages(token)
+        _ui.value = _ui.value.copy(phase = Phase.SAVING, key = "", nextKey = "")
+        app.recorder.finish(aborted) { r ->
+            _ui.value = _ui.value.copy(phase = Phase.DONE, result = r)
+            if (r.file != null && !aborted && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file)
+        }
+    }
+
+    /** For screenshots only. */
+    fun showForPreview(u: Ui) { _ui.value = u }
+
+    /** Back to the start state after the result was seen. */
+    fun reset() {
+        if (!running) _ui.value = Ui()
+    }
+}

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 420" width="820" height="420" font-family="Helvetica, Arial, sans-serif">
+  <title>Keypad on the phalanges of four fingers</title>
+  <rect width="820" height="420" fill="#ffffff"/>
+  <g transform="translate(50 0)">
+
+  <!-- palm -->
+  <path d="M60 300 Q60 250 90 245 L330 245 Q360 250 360 300 L360 380 Q360 405 330 405 L90 405 Q60 405 60 380 Z" fill="#f2f4f8" stroke="#c9ced8" stroke-width="2"/>
+  <text x="210" y="335" text-anchor="middle" font-size="14" fill="#5b6170">palm side</text>
+
+  <!-- fingers: index, middle, ring, little; phalanx near the palm at the bottom -->
+  <g stroke="#c9ced8" stroke-width="2" fill="#f7f8fb">
+    <rect x="72"  y="60"  width="62" height="190" rx="28"/>
+    <rect x="148" y="30"  width="62" height="220" rx="28"/>
+    <rect x="224" y="48"  width="62" height="202" rx="28"/>
+    <rect x="300" y="98"  width="56" height="152" rx="26"/>
+  </g>
+  <g stroke="#c9ced8" stroke-width="1.5">
+    <line x1="80" y1="187" x2="126" y2="187"/><line x1="80" y1="124" x2="126" y2="124"/>
+    <line x1="156" y1="177" x2="202" y2="177"/><line x1="156" y1="104" x2="202" y2="104"/>
+    <line x1="232" y1="183" x2="278" y2="183"/><line x1="232" y1="116" x2="278" y2="116"/>
+    <line x1="307" y1="200" x2="349" y2="200"/><line x1="307" y1="149" x2="349" y2="149"/>
+  </g>
+  <g font-size="22" font-weight="bold" text-anchor="middle" fill="#16181d">
+    <text x="103" y="227">1</text><text x="103" y="164">2</text><text x="103" y="100">3</text>
+    <text x="179" y="222">4</text><text x="179" y="149">5</text><text x="179" y="76">6</text>
+    <text x="255" y="225">7</text><text x="255" y="158">8</text><text x="255" y="90">9</text>
+    <text x="328" y="233">*</text><text x="328" y="183">0</text><text x="328" y="132">#</text>
+  </g>
+  <rect x="152" y="108" width="54" height="66" rx="12" fill="none" stroke="#e08a1e" stroke-width="3"/>
+  <g font-size="12" text-anchor="middle" fill="#5b6170">
+    <text x="103" y="268">index</text><text x="179" y="268">middle</text><text x="255" y="268">ring</text><text x="328" y="268">little</text>
+  </g>
+
+  <!-- thumb with the magnet, coming out of the palm on the index side -->
+  <path d="M66 372 Q20 360 4 300 Q-6 262 22 250 Q46 242 58 274 L72 318" fill="#f7f8fb" stroke="#c9ced8" stroke-width="2"/>
+  <rect x="2" y="262" width="24" height="12" rx="3" fill="#2c56c9" transform="rotate(-20 14 268)"/>
+  <text x="-40" y="232" font-size="12" fill="#2c56c9">magnet on the nail</text>
+  </g>
+
+  <!-- legend -->
+  <g font-size="14" fill="#16181d" transform="translate(50 0)">
+    <text x="410" y="56" font-weight="bold" font-size="16">Phone keypad on four fingers</text>
+    <text x="410" y="88">finger = row:</text>
+    <text x="430" y="110" fill="#5b6170">index 1 2 3 · middle 4 5 6</text>
+    <text x="430" y="130" fill="#5b6170">ring 7 8 9 · little * 0 #</text>
+    <text x="410" y="162">phalanx = column, from the palm to the tip:</text>
+    <text x="430" y="184" fill="#5b6170">near the palm · middle · tip</text>
+    <text x="410" y="216">The thumb touches a phalanx; the magnet on its nail</text>
+    <text x="410" y="236">is seen by two magnetometers on the back of the hand.</text>
+    <text x="410" y="268">Highlighted: key 5 = middle finger, middle phalanx.</text>
+  </g>
+
+  <!-- back of the hand with two sensors -->
+  <g transform="translate(480 300)">
+    <rect x="0" y="0" width="290" height="90" rx="22" fill="#f2f4f8" stroke="#c9ced8" stroke-width="2"/>
+    <text x="145" y="20" text-anchor="middle" font-size="12" fill="#5b6170">back of the hand (capsule)</text>
+    <rect x="34" y="34" width="44" height="30" rx="5" fill="#ffffff" stroke="#2c56c9" stroke-width="2"/>
+    <text x="56" y="54" text-anchor="middle" font-size="12" fill="#2c56c9">S1</text>
+    <rect x="212" y="34" width="44" height="30" rx="5" fill="#ffffff" stroke="#2c56c9" stroke-width="2"/>
+    <text x="234" y="54" text-anchor="middle" font-size="12" fill="#2c56c9">S2</text>
+    <line x1="84" y1="49" x2="206" y2="49" stroke="#5b6170" stroke-dasharray="4 3"/>
+    <text x="145" y="44" text-anchor="middle" font-size="11" fill="#5b6170">distance, mm</text>
+    <text x="56" y="82" text-anchor="middle" font-size="11" fill="#5b6170">index side</text>
+    <text x="234" y="82" text-anchor="middle" font-size="11" fill="#5b6170">little side</text>
+  </g>
+</svg>
