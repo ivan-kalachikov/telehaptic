@@ -32,6 +32,21 @@ static void clockBegin() {
   NRF_RTC2->TASKS_START = 1;
 }
 
+// No watchdog on purpose: whether a pin reset (double tap into the UF2 bootloader) also
+// resets the nRF52840 WDT was not checked, and the Adafruit bootloader does not feed it.
+// A running WDT could make flashing impossible.
+
+static const char* resetReason() {
+  uint32_t r = NRF_POWER->RESETREAS;
+  NRF_POWER->RESETREAS = r;  // bits are cleared by writing 1
+  if (r & POWER_RESETREAS_DOG_Msk) return "watchdog";
+  if (r & POWER_RESETREAS_RESETPIN_Msk) return "reset_button";
+  if (r & POWER_RESETREAS_SREQ_Msk) return "software";
+  if (r & POWER_RESETREAS_LOCKUP_Msk) return "lockup";
+  if (r == 0) return "power_on";
+  return "other";
+}
+
 static uint32_t clockNow() {
   uint32_t c = NRF_RTC2->COUNTER & 0xFFFFFF;
   clockExt += (c - clockLast24) & 0xFFFFFF;
@@ -53,6 +68,7 @@ static bool motorOn = false;
 static uint32_t motorEnd = 0;
 
 static uint16_t batteryMv = 0;
+static const char* bootReason = "";
 static uint32_t nextBattery = 0, nextLive = 0;
 
 // Current packet.
@@ -108,6 +124,8 @@ static void emitBattery() {
 static void emitStatus() {
   char line[200];
   snprintf(line, sizeof line, "FW %s", FW_VERSION);
+  linkInfo(line);
+  snprintf(line, sizeof line, "BOOT reason=%s", bootReason);
   linkInfo(line);
   for (uint8_t i = 0; i < scanLineCount; i++) linkInfo(scanLines[i]);
   emitConfig();
@@ -294,11 +312,17 @@ void setup() {
   Wire.begin();
   Wire.setClock(400000);  // TCA9548A, QMC5883P/L: up to 400 kHz
 
+  const char* reason = resetReason();
   linkBegin();   // starts the SoftDevice and with it the 32 kHz clock
   clockBegin();
   delay(20);     // sensors' power-on time is 250 us (P) / 350 us (L)
 
   linkInfo("FW " FW_VERSION);
+  char line[48];
+  snprintf(line, sizeof line, "BOOT reason=%s", reason);
+  linkInfo(line);
+  bootReason = reason;
+  if (clockNow() == 0) linkInfo("CLOCK FAIL rtc2 not counting");
   rescan();
   imuOk = imuBegin();
   linkInfo(imuOk ? "IMU ok LSM6DS3TR-C" : "IMU FAIL");

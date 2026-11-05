@@ -165,12 +165,31 @@ static void scanOne(uint8_t ch, void (*emit)(const char*), bool hintIfEmpty) {
   }
 }
 
+// Both lines must idle high (pull-ups). A line held low would make the TWIM driver,
+// which waits for bus events without a timeout, hang on the first transfer.
+static bool busIdleHigh(char* line, size_t len) {
+  pinMode(PIN_WIRE_SDA, INPUT);
+  pinMode(PIN_WIRE_SCL, INPUT);
+  delayMicroseconds(50);
+  int sda = digitalRead(PIN_WIRE_SDA), scl = digitalRead(PIN_WIRE_SCL);
+  Wire.begin();  // gives the pins back to the I2C peripheral
+  Wire.setClock(400000);
+  snprintf(line, len, "SCAN BUS_STUCK sda=%d scl=%d", sda, scl);
+  return sda == HIGH && scl == HIGH;
+}
+
 void sensorsScan(void (*emit)(const char*)) {
   magCount = 0;
   muxCurrent = 0xFE;
+  muxPresent = false;
   memset(onMain, 0, sizeof onMain);
-  muxPresent = probe(MUX_ADDR);
   char line[64];
+  if (!busIdleHigh(line, sizeof line)) {
+    emit(line);  // no I2C traffic at all: check wiring, shorts to GND, pull-ups
+    emit("SCAN end mags=0");
+    return;
+  }
+  muxPresent = probe(MUX_ADDR);
   snprintf(line, sizeof line, "SCAN begin mux=%s", muxPresent ? "yes" : "no");
   emit(line);
 
