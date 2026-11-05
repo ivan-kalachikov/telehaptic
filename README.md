@@ -2,7 +2,7 @@
 
 Wearable eyes-free text input. The thumb touches the 12 phalanges of the other four fingers, laid out like a phone keypad. A neodymium magnet on the thumbnail is seen by two magnetometers on the back of the hand. All computing happens in the Android app.
 
-![Keypad on the phalanges](docs/keypad.svg)
+![Keypad on the phalanges](docs/keypad-layout.svg)
 
 Palm side, fingers pointing right:
 
