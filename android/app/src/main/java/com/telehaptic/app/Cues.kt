@@ -10,12 +10,15 @@ import java.util.Locale
 class Cues(ctx: Context, private val log: AppLog) {
     private val tone = try { ToneGenerator(AudioManager.STREAM_MUSIC, 90) } catch (e: Exception) { null }
     private var tts: TextToSpeech? = null
-    @Volatile var ttsStatus = "starting"
-        private set
+    private val _voice = kotlinx.coroutines.flow.MutableStateFlow("starting")
+    /** "starting", "ok", "no_english" or "error": the home screen warns when there is no voice. */
+    val voice: kotlinx.coroutines.flow.StateFlow<String> = _voice
+    val ttsStatus get() = _voice.value
+    @Volatile private var alertUntil = 0L
 
     init {
         tts = TextToSpeech(ctx) { st ->
-            ttsStatus = if (st != TextToSpeech.SUCCESS) "error" else {
+            _voice.value = if (st != TextToSpeech.SUCCESS) "error" else {
                 val r = tts?.setLanguage(Locale.US)
                 if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) "no_english" else "ok"
             }
@@ -32,16 +35,23 @@ class Cues(ctx: Context, private val log: AppLog) {
     /** Something changed that the person, not looking at the phone, must notice: phone vibration and speech. */
     fun alert(text: String) {
         try { vibrator?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 120, 80, 120), -1)) } catch (_: Exception) {}
-        say(text)
+        // A distinct sound too: the phone may be too far away to feel it vibrate.
+        tone?.startTone(ToneGenerator.TONE_PROP_NACK, 300)
+        if (ttsStatus == "ok") tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "alert")
+        alertUntil = android.os.SystemClock.uptimeMillis() + 3000
     }
 
+    /** Cues replace each other (a new key name cuts the old one), but never cut an alert just spoken. */
     fun say(text: String) {
-        if (ttsStatus == "ok") tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "cue")
+        val mode = if (android.os.SystemClock.uptimeMillis() < alertUntil) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
+        if (ttsStatus == "ok") tts?.speak(text, mode, null, "cue")
     }
 
-    fun sayKey(key: String) = say(NAMES[key] ?: key)
+    fun sayKey(key: String) = say(keyName(key))
 
     companion object {
+        fun keyName(key: String) = NAMES[key] ?: key
+
         private val NAMES = mapOf(
             "1" to "one", "2" to "two", "3" to "three", "4" to "four", "5" to "five", "6" to "six",
             "7" to "seven", "8" to "eight", "9" to "nine", "*" to "star", "0" to "zero", "#" to "hash",

@@ -163,6 +163,7 @@ fun SettingsScreen(nav: Nav) {
     var repo by remember { mutableStateOf(p.githubRepo) }
     var token by remember { mutableStateOf(p.githubToken) }
     var auto by remember { mutableStateOf(p.autoUpload) }
+    var speak by remember { mutableStateOf(p.speakTyping) }
     var check by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     if (confirm.isNotEmpty()) androidx.compose.material3.AlertDialog(
@@ -180,7 +181,16 @@ fun SettingsScreen(nav: Nav) {
                     Text("Detailed mode")
                     Muted("Rates, losses, voltage and model confidence on the main screens.")
                 }
+                Spacer(Modifier.width(12.dp))
                 Switch(checked = detailed, onCheckedChange = { detailed = it; p.detailed = it })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column1(Modifier.weight(1f)) {
+                    Text("Speak while typing")
+                    Muted("The word on space and full stop, the new word on *, \"erase\" on #.")
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(checked = speak, onCheckedChange = { speak = it; p.speakTyping = it })
             }
         }
         Section("Magnet and sensors") { MagnetFields() }

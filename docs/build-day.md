@@ -79,7 +79,7 @@ If the scan ran before the terminal opened, press reset once. The scan repeats, 
 ## 5. The phone
 
 1. On the phone, open the release page, download `telehaptic.apk` and allow installing from this source.
-2. Open the app and tap Allow: it needs Nearby devices and notifications. Then "Find and connect the capsule".
+2. Open the app and tap **Connect the capsule**. The first time Android asks for Nearby devices and notifications: allow both.
 3. The main screen should show:
    - Connected;
    - Both sensors in place;
@@ -121,15 +121,30 @@ If Diagnostics shows "last start: restarted by software" without a fresh flash, 
 
 ## 7. First series of recordings
 
-Menu ⋮ → **Experiments**. Before each recording the app checks that the capsule is connected and both sensors are in place.
+Menu ⋮ → **Experiments**. Start works only when the capsule is connected and at least one sensor was found. Check that the main screen says "Both sensors in place" first.
 
 1. **Calibration.** No magnet. 10 s with the hand still while the capsule vibrates five times, then 40 s of slowly turning the hand in all directions.
-2. **Keys**, "Hand on the table, on its edge". Magnet on the nail. About 4 minutes.
-3. Take the capsule off and put it on again. **Keys**, "Hand on the table, on its edge", with "After putting the capsule on again".
-4. **Keys**, "Arm hanging along the body".
+2. **Keys**, "On the table, on its edge". Magnet on the nail. About 4 minutes.
+3. Take the capsule off and put it on again. **Keys**, "On the table, on its edge", with "Capsule just put on again" switched on.
+4. **Keys**, "Hanging along the body".
 
 The recording without the magnet comes later, if the first results are good.
 
 With the token set, each recording goes to `data/` in the repository by itself, and I run the analysis.
 
 **Rate.** 200 Hz by default: twice as many accelerometer points at the moment of touch, to see whether a firm touch gives a jolt. 100 Hz, as on the phone stand, can be set in Diagnostics → Sensor settings; it lasts until the capsule restarts.
+
+If the capsule is lost for more than 5 seconds, the recording stops by itself and the phone says so. The phone also says at the end whether the recording was saved.
+
+## 8. Training, typing, re-fit
+
+These are on the main screen, not in Experiments.
+
+1. **Start training**, about 4 minutes, phone on the table nearby.
+   - Part 1: the phone says a key, then one beep: touch it and hold until two beeps.
+   - Part 2: quick taps at your own pace. The capsule clicks when a tap is found.
+   - If the capsule is lost, training pauses and goes on by itself when the capsule is back.
+   - At the end the phone says how many quick taps the model recognises.
+2. **Start typing.** A short click means a key was read; a long buzz means the touch was not like any key. The phone says each word on space (0) and the new word on *; this can be switched off in Settings. Keep the thumb away from the fingers for the first second, while the app measures the rest level.
+3. **Next time you put the capsule on**, the main screen offers **Re-fit** first: about a minute of quick taps on all keys. If the result gets worse, the old model is kept; if it gets better, "Undo the re-fit" brings the old one back.
+

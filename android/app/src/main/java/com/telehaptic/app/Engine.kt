@@ -21,9 +21,21 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
 
     private val main = Handler(Looper.getMainLooper())
     val segmenter = Segmenter()
-    @Volatile var mode = Mode.OFF
+    @Volatile var mode = Mode.OFF; private set
     @Volatile var model: Lda? = null
-    @Volatile var onTouch: ((Detected) -> Unit)? = null
+    @Volatile private var onTouch: ((Detected) -> Unit)? = null
+    @Volatile private var owner: Any? = null
+    // The motor's field and shaking ring on for a moment after the motor flag ends (the analysis
+    // masks 0.1 s after it too): the detector waits that long.
+    private var motorQuietUntilNs = 0L
+
+    /** Training and typing take the detector in turn; the last one to claim it gets the touches. */
+    fun claim(who: Any, m: Mode, touch: (Detected) -> Unit) { owner = who; onTouch = touch; mode = m }
+
+    /** Gives the detector back, but only if [who] still holds it (a newer owner keeps it). */
+    fun release(who: Any) { if (owner === who) { owner = null; mode = Mode.OFF; onTouch = null } }
+
+    fun ownedBy(who: Any) = owner === who
 
     private val histT = LongArray(HIST)
     private val histX = Array(HIST) { DoubleArray(6) }
@@ -49,7 +61,8 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
             if (size < HIST) size++
             if (mode == Mode.OFF) continue
             // The motor's own field and shaking would disturb the plateau and the gyro gate: skip those samples.
-            if (s.motor()) continue
+            if (s.motor()) { motorQuietUntilNs = tNs[k] + MOTOR_RING_NS; continue }
+            if (tNs[k] < motorQuietUntilNs) continue
             val g = DoubleArray(3) { s.gyr[it] * capsule.info.gyrMdpsPerLsb / 1000.0 }
             val gyro = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
             val ev = segmenter.add(tNs[k], x.copyOf(), twoSensors, gyro) ?: continue
@@ -78,13 +91,14 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
     fun resetSegmenter() = capsule.handler.post { segmenter.reset() }
 
     /** The segmenter lives on the capsule thread; settings change there too. */
-    fun configure(p: Segmenter.Params, rest: DoubleArray?) = capsule.handler.post {
+    fun configure(p: Segmenter.Params, rest: DoubleArray?, guard: List<DoubleArray> = emptyList()) = capsule.handler.post {
         segmenter.p = p
         segmenter.reset()
-        if (rest != null) segmenter.setRest(rest) else segmenter.clearRest()
+        if (rest != null) segmenter.setRest(rest) else segmenter.clearRest(guard)
     }
 
     companion object {
         const val HIST = 2000  // 10 s at 200 Hz
+        const val MOTOR_RING_NS = 100_000_000L
     }
 }

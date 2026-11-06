@@ -117,4 +117,10 @@ class ModelTest {
         typing.key("#")
         assertEquals("hello", typing.display())
     }
+
+    @Test fun t9FindsBeginningsOfLongWords() {
+        val t9 = T9(sequenceOf("understanding" to 100L, "under" to 50L))
+        val d = T9.code("understa")!!
+        assertEquals(listOf("understa"), t9.candidates(d))
+    }
 }

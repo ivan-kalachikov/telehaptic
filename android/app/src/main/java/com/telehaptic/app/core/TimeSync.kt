@@ -78,6 +78,30 @@ class TimeSync(private val windowS: Double = 20.0) {
 }
 
 /**
+ * The capsule clock is a u32 of 1/32768 s and wraps after about 36.4 h of uptime. Times are
+ * made monotonic here (a jump back by more than half the range is a wrap); a capsule restart
+ * is detected from the sample index instead and calls [reset].
+ */
+class TickUnwrap {
+    private var high = 0L
+    private var last = -1L
+
+    fun reset() { high = 0; last = -1 }
+
+    fun unwrap(raw: Long): Long {
+        var v = high + raw
+        if (last >= 0 && v < last - HALF) { high += RANGE; v += RANGE }
+        last = v
+        return v
+    }
+
+    companion object {
+        const val RANGE = 1L shl 32
+        const val HALF = 1L shl 31
+    }
+}
+
+/**
  * Received / lost samples. Sample indices are consecutive from the capsule's start, so a gap
  * is a loss. A smaller index than expected means the capsule restarted.
  */
@@ -109,8 +133,8 @@ class StreamStats {
         packets++
         window.addLast(lastTicks to received)
         windowLost.addLast(lastTicks to lost)
-        while (window.size > 2 && lastTicks - window.first().first > 10 * 32768) window.removeFirst()
-        while (windowLost.size > 2 && lastTicks - windowLost.first().first > 10 * 32768) windowLost.removeFirst()
+        while (window.size > 2 && (lastTicks - window.first().first > 10 * 32768 || window.size > 4000)) window.removeFirst()
+        while (windowLost.size > 2 && (lastTicks - windowLost.first().first > 10 * 32768 || windowLost.size > 4000)) windowLost.removeFirst()
         if (!ok) { window.clear(); windowLost.clear() }
         return ok
     }

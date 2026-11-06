@@ -18,7 +18,12 @@ bool linkSendData(const uint8_t* buf, uint16_t len);
 // Text line to USB Serial and, when subscribed, to INFO.
 void linkInfo(const char* line);
 
-extern volatile uint32_t linkDroppedPackets;
+// Notification payload that fits the negotiated MTU (at most PKT_MAX_PAYLOAD).
+uint16_t linkPayloadMax();
+
+extern volatile uint32_t linkDroppedPackets;  // notify failed (tx task)
+extern volatile uint32_t linkQueueFull;       // packet dropped, send queue full (loop task)
+extern volatile uint32_t linkDroppedInfo;     // INFO line dropped, queue full
 
 // USB Serial line that never blocks.
 void serialLine(const char* line);

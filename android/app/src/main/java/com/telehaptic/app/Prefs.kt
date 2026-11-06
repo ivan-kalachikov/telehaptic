@@ -29,6 +29,10 @@ class Prefs(ctx: Context) {
     var githubBranch: String
         get() = p.getString("gh_branch", "main") ?: "main"
         set(v) = p.edit().putString("gh_branch", v.trim()).apply()
+    /** Typing: say the word on space, the variant on *, "erase" on #. */
+    var speakTyping: Boolean
+        get() = p.getBoolean("speak_typing", true)
+        set(v) = p.edit().putBoolean("speak_typing", v).apply()
     var autoUpload: Boolean
         get() = p.getBoolean("auto_upload", true)
         set(v) = p.edit().putBoolean("auto_upload", v).apply()

@@ -23,7 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.telehaptic.app.core.Keys
 
-enum class Mark { NONE, NEXT, HOLD, RECOGNIZED }
+enum class Mark { NONE, NEXT, HOLD, RECOGNIZED, LAST }
 
 /**
  * Four fingers seen from the palm, pointing right: index at the top, little finger at the bottom,
@@ -94,13 +94,13 @@ fun HandDiagram(
         }
         for (b in boxes) {
             val hit = b.key == key && mark != Mark.NONE
-            val color = if (mark == Mark.RECOGNIZED) accent else keyC
+            val color = if (mark == Mark.RECOGNIZED || mark == Mark.LAST) accent else keyC
             if (hit) {
                 val inset = b.height * 0.1f
                 val o = Offset(b.left + inset, b.top + inset)
                 val sz = Size(b.width - 2 * inset, b.height - 2 * inset)
                 val cr = CornerRadius(b.height * 0.3f)
-                if (mark != Mark.NEXT) drawRoundRect(color.copy(alpha = 0.22f), o, sz, cr)
+                if (mark == Mark.HOLD || mark == Mark.RECOGNIZED) drawRoundRect(color.copy(alpha = 0.22f), o, sz, cr)
                 drawRoundRect(color, o, sz, cr, style = Stroke(width = 2.5.dp.toPx()))
             }
             val cx = b.left + b.width / 2

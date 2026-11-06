@@ -20,6 +20,7 @@ object Proto {
     const val FLAG_STALE = 1 shl 11
     const val FLAG_CONFIG = 1 shl 12
     const val FLAG_I2C_ERR = 1 shl 13
+    const val FLAG_IMU_ERR = 1 shl 14
     fun satBit(mag: Int, axis: Int) = 1 shl (3 * mag + axis)
 
     // IMU scales (firmware imu.h, from the Seeed LSM6DS3 library's calcAccel / calcGyro).

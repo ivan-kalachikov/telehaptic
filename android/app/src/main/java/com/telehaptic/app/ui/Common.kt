@@ -77,6 +77,7 @@ fun statusTitle(s: Capsule.Status) = when (s) {
 
 fun statusHint(s: Capsule.Status) = when (s) {
     Capsule.Status.BT_OFF -> ""
+    Capsule.Status.IDLE -> "Switch the capsule on, then connect."
     Capsule.Status.NOT_FOUND -> "Switch the capsule on, bring it close to the phone and tap Connect the capsule."
     Capsule.Status.NO_DATA -> "Switch the capsule off and on. If that does not help, open Diagnostics."
     Capsule.Status.RECONNECTING -> "Check that the capsule is on and nearby."

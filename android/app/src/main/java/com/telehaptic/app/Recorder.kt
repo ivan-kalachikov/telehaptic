@@ -96,6 +96,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         capsule.addListener(this)
         // A recording cut off by a killed app leaves its folder behind: keep it as a stopped recording.
         io.execute {
+            dir.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }   // zip cut off mid-write; its folder is still in rec/
             File(ctx.filesDir, "rec").listFiles()?.filter { it.isDirectory }?.forEach { d ->
                 try {
                     val z = File(dir, d.name + "_ABORTED.zip")
@@ -134,6 +135,9 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
                 syncW = writer(File(w, "sync.csv"), RecordFormat.SYNC_HEADER)
                 infoW = writer(File(w, "info.csv"), RecordFormat.INFO_HEADER)
                 open = true
+                lastFlushNs = now
+                // A provisional meta.json: a recording cut off by a killed app can still be analysed.
+                File(w, "meta.json").writeText(meta(s, true, now).put("provisional", true).toString(2))
                 log.i("rec", "start $id, magnetometers $nMags")
             } catch (e: Exception) {
                 error = "Could not start the recording: $e"
@@ -153,10 +157,18 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         h.post {
             if (!open) return@post
             write(events, "$t,$name,$trial,$key\n")
+            flush(events)
         }
     }
 
     private fun writer(f: File, header: String) = BufferedWriter(FileWriter(f), 1 shl 16).apply { write(header); write("\n") }
+
+    // Low-rate files are flushed at once, samples once a second: a killed app loses at most a second.
+    private var lastFlushNs = 0L
+
+    private fun flush(w: BufferedWriter?) {
+        try { w?.flush() } catch (e: Exception) { if (error == null) error = "Write error: $e" }
+    }
 
     private fun write(w: BufferedWriter?, s: String) {
         try { w?.write(s) } catch (e: Exception) { if (error == null) error = "Write error: $e" }
@@ -183,24 +195,34 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
             if (s.flags and Proto.FLAG_I2C_ERR != 0) i2c++
             if (s.motor()) motorSamples++
         }
+        if (rxNs - lastFlushNs > 1_000_000_000L) { lastFlushNs = rxNs; flush(samples); flush(packets) }
     }
 
     override fun onInfo(rxNs: Long, line: String) {
         if (!open) return
         write(infoW, "$rxNs,${RecordFormat.csvQuote(line)}\n")
+        flush(infoW)
         if (line.startsWith("BAT ")) line.substringAfter("mv=").toIntOrNull()?.let { if (it in 1 until minBattery) minBattery = it }
     }
 
     override fun onPong(sentNs: Long, rxNs: Long, token: Long, ticks: Long) {
         if (!open) return
         write(syncW, "$sentNs,$rxNs,$token,$ticks\n")
+        flush(syncW)
     }
 
     override fun onLink(connected: Boolean) {
         if (!open) return
         val t = SystemClock.elapsedRealtimeNanos()
         write(events, "$t,${if (connected) "link_up" else "link_down"},-1,\n")
+        flush(events)
         if (!connected) { disconnects++; expected = -1 }
+    }
+
+    override fun onStall(stalled: Boolean) {
+        if (!open) return
+        write(events, "${SystemClock.elapsedRealtimeNanos()},${if (stalled) "data_stalled" else "data_back"},-1,\n")
+        flush(events)
     }
 
     // ------------------------------------------------------------ finish
@@ -307,13 +329,16 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         return m
     }
 
+    /** Written under a temporary name and renamed when complete: the list and the uploader never see half a zip. */
     private fun zip(src: File, dst: File) {
-        ZipOutputStream(FileOutputStream(dst)).use { z ->
+        val part = File(dst.parentFile, dst.name + ".part")
+        ZipOutputStream(FileOutputStream(part)).use { z ->
             for (f in src.listFiles()!!.sortedBy { it.name }) {
                 z.putNextEntry(ZipEntry(f.name))
                 FileInputStream(f).use { it.copyTo(z) }
                 z.closeEntry()
             }
         }
+        if (!part.renameTo(dst)) { part.delete(); throw java.io.IOException("could not rename ${part.name}") }
     }
 }

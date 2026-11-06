@@ -37,21 +37,24 @@ class Session(private val app: App) {
     init {
         // Capsule lost while recording: warn at once; if it is not back in 5 s, stop, the rest would be lost anyway.
         app.capsule.addListener(object : Capsule.Listener {
-            override fun onLink(connected: Boolean) {
-                main.post {
-                    if (!running) return@post
-                    if (connected) { main.removeCallbacks(lostCheck); app.cues.say("Capsule connected"); return@post }
-                    app.cues.alert("Capsule disconnected")
-                    main.removeCallbacks(lostCheck)
-                    main.postDelayed(lostCheck, 5000)
-                }
-            }
+            override fun onLink(connected: Boolean) { main.post { linkChange(connected) } }
+            override fun onStall(stalled: Boolean) { main.post { linkChange(!stalled) } }
         })
     }
 
+    private fun linkChange(up: Boolean) {
+        if (!running) return
+        if (up) { main.removeCallbacks(lostCheck); app.cues.say("Capsule is back"); return }
+        app.cues.alert("Capsule lost")
+        main.removeCallbacks(lostCheck)
+        main.postDelayed(lostCheck, 5000)
+    }
+
     private val lostCheck = Runnable {
-        if (running && !app.capsule.ui.value.status.let { it == Capsule.Status.CONNECTED || it == Capsule.Status.NO_DATA }) {
+        // Connected without data counts as lost too.
+        if (running && app.capsule.ui.value.status != Capsule.Status.CONNECTED) {
             app.recorder.event("abort", _ui.value.trial, "link lost")
+            app.cues.alert("Recording stopped. The capsule was lost.")
             _ui.value = _ui.value.copy(note = "Stopped: the capsule was lost for more than 5 seconds. Record again when it is connected.")
             finish(aborted = true)
         }
@@ -70,6 +73,14 @@ class Session(private val app: App) {
         val spec = RecordingSpec(kind, posture, rewear, app.prefs.magnet, app.prefs.distanceMm, note, seed, seq, plan)
         _ui.value = Ui(phase = Phase.STARTING, kind = kind, trials = seq.size)
         val ok = app.recorder.start(spec) { id ->
+            if (_ui.value.phase != Phase.STARTING) return@start   // stopped meanwhile
+            if (!app.recorder.isOpen) {
+                // The files could not be created (disk full?): say so now, not after the whole plan.
+                _ui.value = _ui.value.copy(phase = Phase.SAVING, note = "Could not start the recording. Details in Logs.")
+                app.recorder.finish(true) { r -> _ui.value = _ui.value.copy(phase = Phase.DONE, result = r) }   // the Done screen shows the error
+                app.cues.alert("Could not start the recording")
+                return@start
+            }
             val t0 = SystemClock.uptimeMillis()
             val total = steps.last().atMs
             _ui.value = _ui.value.copy(phase = Phase.LEAD, id = id, startedAt = SystemClock.elapsedRealtime(),
@@ -141,6 +152,12 @@ class Session(private val app: App) {
         _ui.value = _ui.value.copy(phase = Phase.SAVING, key = "", nextKey = "")
         app.recorder.finish(aborted) { r ->
             _ui.value = _ui.value.copy(phase = Phase.DONE, result = r)
+            app.cues.say(when {
+                r.file == null -> "The recording could not be saved. Check the phone."
+                aborted -> "Recording stopped and kept."
+                r.lost > 0 || r.disconnects > 0 -> "Done. Saved, with some data lost. Check the phone."
+                else -> "Done. Saved."
+            })
             if (r.file != null && !aborted && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file)
         }
     }

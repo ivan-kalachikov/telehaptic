@@ -63,15 +63,22 @@ fun LearnCards(nav: Nav, linked: Boolean) {
     val app = App.get()
     val s by app.brain.summary.collectAsState()
     val detailed = app.prefs.detailed
+    // The capsule sits a little differently every time it is put on: until a re-fit or a training in
+    // this run of the app, the re-fit is the main action and typing comes second.
+    val fresh = s.savedMs > 0 && s.savedMs >= appStartMs
     Section("Training") {
         if (s.trained) {
             if (s.total > 0) {
                 val share = s.correct.toDouble() / s.total
                 Text("Recognises ${f0(share * 100)}% of quick taps", fontWeight = FontWeight.SemiBold)
-                Muted(verdict(share) + if (detailed) " · ${s.correct} of ${s.total} · ${s.date}" else "")
-            } else Text("Model trained", fontWeight = FontWeight.SemiBold)
+                Muted(verdict(share) + " · " + age(s.savedMs) + if (detailed) " · ${s.correct} of ${s.total}" else "")
+            } else Text("Model trained · ${age(s.savedMs)}", fontWeight = FontWeight.SemiBold)
             if (!linked) Muted("Connect the capsule to re-fit or train.")
-            OutlinedButton(onClick = { nav.go(Screen.Retrain) }, enabled = linked, modifier = Modifier.fillMaxWidth()) { Text("Re-fit after putting the capsule on") }
+            if (!fresh) {
+                Button(onClick = { nav.go(Screen.Retrain) }, enabled = linked, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Capsule put on again? Re-fit, about a minute") }
+            } else {
+                OutlinedButton(onClick = { nav.go(Screen.Retrain) }, enabled = linked, modifier = Modifier.fillMaxWidth()) { Text("Re-fit, about a minute") }
+            }
             TextButton(onClick = { nav.go(Screen.Train) }, enabled = linked) { Text("Train from scratch (replaces the model)") }
         } else {
             Muted("About 4 minutes: 24 touches with a hold, then 24 quick taps. The model learns right on the phone.")
@@ -80,8 +87,25 @@ fun LearnCards(nav: Nav, linked: Boolean) {
         }
     }
     if (s.trained) Section("Typing") {
-        Muted("Type without looking. The capsule clicks on every accepted touch.")
-        Button(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start typing") }
+        Muted("Type without looking: a short click for every key read, a long buzz for a touch not like any key. The phone says each word on space.")
+        if (fresh) Button(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start typing") }
+        else OutlinedButton(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth()) { Text("Start typing") }
+    }
+}
+
+/** When this run of the app started: a model saved after it was fitted to how the capsule sits now. */
+val appStartMs = System.currentTimeMillis()
+
+/** "trained today, 14:05" / "trained yesterday" / "trained 3 days ago". */
+fun age(ms: Long): String {
+    if (ms <= 0) return "trained earlier"
+    val cal = java.util.Calendar.getInstance()
+    fun day(t: Long) = cal.apply { timeInMillis = t }.let { it.get(java.util.Calendar.YEAR) * 400 + it.get(java.util.Calendar.DAY_OF_YEAR) }
+    val days = day(System.currentTimeMillis()) - day(ms)
+    return when {
+        days <= 0 -> "trained today, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(ms))
+        days == 1 -> "trained yesterday"
+        else -> "trained $days days ago"
     }
 }
 
@@ -117,12 +141,12 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
             return@Page
         }
         when (u.phase) {
-            Training.Phase.IDLE -> if (retrain) RetrainIntro(sum.weakKeys, nav) else TrainIntro(nav)
+            Training.Phase.IDLE -> if (retrain) RetrainIntro(practiseKeys(Evaluation.Report(sum.correct, sum.total, sum.confusions, sum.weakKeys)), nav) else TrainIntro(nav)
             Training.Phase.STARTING -> CircularProgressIndicator()
             Training.Phase.HOLDS, Training.Phase.TAPS -> {
                 // One message about the link: the paused hint if there is one, else a short line.
                 if (u.hint.isNotEmpty()) Text(u.hint, color = Palette.warn)
-                else if (!cap.status.linked) Text("Capsule disconnected. Reconnecting…", color = Palette.bad)
+                else if (!cap.status.linked) Text("Capsule lost. Reconnecting…", color = Palette.bad)
                 val part = when {
                     u.retrain -> "Quick taps"
                     u.phase == Training.Phase.HOLDS -> "Part 1 of 2 · touches with a hold"
@@ -143,7 +167,9 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
                     recognized = u.phase == Training.Phase.TAPS && now < u.flashUntil,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { app.training.pause(!u.paused) }) { Text(if (u.paused) "Resume" else "Pause") }
+                    Button(onClick = { app.training.pause(!u.paused) }, enabled = !u.paused || cap.status == com.telehaptic.app.Capsule.Status.CONNECTED) {
+                        Text(if (u.paused) "Resume" else "Pause")
+                    }
                     OutlinedButton(onClick = { app.training.repeatLast() }) { Text("Redo last") }
                     if (u.phase == Training.Phase.TAPS) TextButton(onClick = { app.training.skip() }) { Text("Skip") }
                 }
@@ -160,15 +186,15 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
 
 /** Magnet and sensor distance: asked only when missing, otherwise one line with a way to change it. */
 @Composable
-fun MagnetLine(nav: Nav) {
+fun MagnetLine(nav: Nav, showMagnet: Boolean = true) {
     val app = App.get()
-    if (app.prefs.magnet.isEmpty() || app.prefs.distanceMm <= 0) {
+    if ((showMagnet && app.prefs.magnet.isEmpty()) || app.prefs.distanceMm <= 0) {
         Section("Before the first training") {
             MagnetFields()
         }
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Muted("${Prefs.magnetTitle(app.prefs.magnet)} · sensors ${app.prefs.distanceMm} mm apart", Modifier.weight(1f))
+            Muted((if (showMagnet) "${Prefs.magnetTitle(app.prefs.magnet)} · " else "") + "sensors ${app.prefs.distanceMm} mm apart", Modifier.weight(1f))
             TextButton(onClick = { nav.go(Screen.Settings) }) { Text("Change") }
         }
     }
@@ -191,11 +217,12 @@ private fun readiness(): String {
 private fun TrainIntro(nav: Nav) {
     val app = App.get()
     Section {
-        Text("Part 1: 24 touches with a hold. One beep: touch and hold. Two beeps: release.")
+        Text("Part 1: 24 touches with a hold. The phone says the key, then one beep: touch it and hold. Two beeps: release.")
         Text("Part 2: 24 quick taps at your own pace. The capsule clicks when a touch is accepted.")
         Muted("About 4 minutes. Hand in a comfortable position, magnet on the nail.")
     }
     MagnetLine(nav)
+    VoiceWarning()
     val missing = readiness()
     if (missing.isNotEmpty()) Text(missing, color = Palette.warn)
     Button(onClick = { app.training.startTraining() }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start") }
@@ -215,11 +242,19 @@ private fun RetrainIntro(weak: List<String>, nav: Nav) {
         Text("Start: all keys, 2 taps each")
     }
     if (weak.isNotEmpty()) {
-        val keys = weak.take(4)
+        val keys = weak
         OutlinedButton(onClick = { app.training.startRetrain(keys, 4) }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth()) {
-            Text("Practise only ${keyList(keys)} (4 taps each)")
+            Text("Practise only ${keyList(keys)} · 4 taps each")
         }
     }
+}
+
+/** Both keys of the most confused pairs (up to 4 keys): practising one side of a pair does not separate them. */
+fun practiseKeys(r: Evaluation.Report): List<String> {
+    val out = LinkedHashSet<String>()
+    for ((a, b, _) in r.confusions) { if (out.size >= 4) break; out.add(a); if (out.size < 4) out.add(b) }
+    if (out.isEmpty()) out.addAll(r.wrongKeys.take(4))
+    return out.toList()
 }
 
 private fun keyList(k: List<String>) = if (k.size == 1) k[0] else k.dropLast(1).joinToString(", ") + " and " + k.last()
@@ -242,10 +277,10 @@ private fun ResultBlock(u: Training.Ui, nav: Nav, linked: Boolean) {
         if (detailed) Muted("${r.correct} of ${r.total} quick taps the model did not see in training.")
     }
     if (u.full) ConfusionList(r)
-    val weak = r.wrongKeys.take(3)
+    val weak = practiseKeys(r)
     if (weak.isNotEmpty()) {
         Button(onClick = { app.training.close(); app.training.startRetrain(weak, 4) }, enabled = linked, modifier = Modifier.fillMaxWidth()) {
-            Text("Practise ${keyList(weak)} (4 taps each, about a minute)")
+            Text("Practise ${keyList(weak)} · about a minute")
         }
         if (!linked) Muted("Connect the capsule to practise.")
     }
@@ -286,11 +321,14 @@ fun TypingScreen(nav: Nav) {
     BackHandler { leave() }
 
     if (ask) AlertDialog(
-        onDismissRequest = { },   // must be answered: the corrections would be lost silently otherwise
-        title = { Text("Use your corrections?") },
-        text = { Text((if (u.corrections == 1) "Once" else "${u.corrections} times") + " you erased a letter key and typed another one. Add these touches to training as the keys you meant?") },
-        confirmButton = { TextButton(onClick = { app.typing.applyCorrections(true); ask = false; nav.back() }) { Text("Add") } },
-        dismissButton = { TextButton(onClick = { app.typing.applyCorrections(false); ask = false; nav.back() }) { Text("Discard") } },
+        onDismissRequest = { ask = false },   // stays in typing; asked again on leaving
+        title = { Text("Teach the model your corrections?") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text((if (u.corrections == 1) "1 touch looks" else "${u.corrections} touches look") + " misread: you erased a letter right away and typed another key.")
+            Muted("Add them only if the phone read the wrong key. If you erased to change the word, they would teach the model wrong keys.")
+        } },
+        confirmButton = { TextButton(onClick = { app.typing.applyCorrections(true); ask = false; nav.back() }) { Text("Add to training") } },
+        dismissButton = { TextButton(onClick = { app.typing.applyCorrections(false); ask = false; nav.back() }) { Text("Leave without") } },
     )
     if (askClear) AlertDialog(
         onDismissRequest = { askClear = false },
@@ -300,13 +338,17 @@ fun TypingScreen(nav: Nav) {
     )
 
     Page("Typing", nav, onBack = leave) {
-        if (!cap.status.linked) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        when (cap.status) {
+            com.telehaptic.app.Capsule.Status.CONNECTED -> {}
+            com.telehaptic.app.Capsule.Status.NO_DATA -> Text("No data from the capsule. Waiting…", color = Palette.warn)
+            com.telehaptic.app.Capsule.Status.RECONNECTING, com.telehaptic.app.Capsule.Status.CONNECTING, com.telehaptic.app.Capsule.Status.SEARCHING ->
+                Text("Capsule lost. Reconnecting… Meanwhile you can tap the keys below.", color = Palette.warn)
+            else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Capsule not connected. You can tap the keys below.", color = Palette.warn, modifier = Modifier.weight(1f))
                 TextButton(onClick = { app.capsule.connect() }) { Text("Connect") }
             }
         }
-        if (u.dictError) Text("The word list could not be loaded, so words are not suggested. Details in Logs.", color = Palette.warn)
+        if (u.dictError) Text("The word list could not be loaded: the digits are shown as typed, without words. Details in Logs.", color = Palette.warn)
         else if (!u.ready) Muted("Loading the dictionary…")
         Section {
             Text(u.text.ifEmpty { " " }, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
@@ -319,7 +361,8 @@ fun TypingScreen(nav: Nav) {
                 }
             }
         }
-        HandDiagram(u.lastKey, if (now < u.flashUntil) Mark.RECOGNIZED else Mark.NONE,
+        // The last key stays outlined until the next one, so it can be read from a distance.
+        HandDiagram(u.lastKey, if (now < u.flashUntil) Mark.RECOGNIZED else Mark.LAST,
             Modifier.fillMaxWidth(), letters = true, onKey = { app.typing.screenKey(it) })
         if (app.prefs.detailed && u.lastKey.isNotEmpty()) {
             Muted("${u.lastKey} · ${f0(u.posterior * 100)}% · runner-up ${u.second} (${f0(u.secondPosterior * 100)}%) · not like any key: ${u.rejected}")

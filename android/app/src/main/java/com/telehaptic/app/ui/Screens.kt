@@ -104,7 +104,10 @@ fun HomeScreen(nav: Nav) {
         CapsuleCard(ui, app.prefs.detailed, onDiagnostics = { nav.go(Screen.Diagnostics) }) {
             when (ui.status) {
                 Capsule.Status.BT_OFF -> Button(onClick = { ctx.startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }, modifier = Modifier.fillMaxWidth()) { Text("Turn on Bluetooth") }
-                Capsule.Status.IDLE, Capsule.Status.NOT_FOUND -> Button(onClick = { app.capsule.connect() }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Connect the capsule") }
+                // Without the permissions the first tap asks for them right away, then connects.
+                Capsule.Status.IDLE, Capsule.Status.NOT_FOUND, Capsule.Status.NO_PERMISSION -> Button(onClick = {
+                    if (app.capsule.hasPermissions()) app.capsule.connect() else askPermissions.launch(permissions)
+                }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Connect the capsule") }
                 Capsule.Status.CONNECTED, Capsule.Status.NO_DATA, Capsule.Status.RECONNECTING, Capsule.Status.CONNECTING ->
                     TextButton(onClick = { app.capsule.disconnect() }) { Text("Disconnect", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 else -> {}
@@ -120,10 +123,11 @@ fun HomeScreen(nav: Nav) {
                     Button(onClick = {
                         ctx.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", ctx.packageName, null)))
                     }, modifier = Modifier.fillMaxWidth()) { Text("Open app settings") }
-                } else Button(onClick = { askPermissions.launch(permissions) }, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
+                }
             }
             else -> {}
         }
+        VoiceWarning()
 
         LearnCards(nav, ui.status.linked)
     }
@@ -155,7 +159,7 @@ fun CapsuleCard(ui: Capsule.Ui, detailed: Boolean, onDiagnostics: (() -> Unit)? 
                 })
             } else ui.problems.forEach { Text(it, color = Palette.warn, fontSize = 14.sp) }
             if (detailed) Muted("${f0(ui.measuredHz)} Hz · loss ${f1(ui.recentLoss * 100)}% · RTT ${f0(ui.rttMs)} ms · firmware ${ui.firmware}")
-        }
+        } else ui.problems.forEach { Text(it, color = Palette.warn, fontSize = 14.sp) }   // e.g. still waiting, battery probably empty
         if (onDiagnostics != null && (ui.problems.isNotEmpty() || ui.status == Capsule.Status.NO_DATA)) {
             OutlinedButton(onClick = onDiagnostics) { Text("Open Diagnostics") }
         }
@@ -202,7 +206,7 @@ fun ExperimentsScreen(nav: Nav) {
 @Composable
 private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, detailed: Boolean, onShare: () -> Unit) {
     Column {
-    Row(Modifier.fillMaxWidth().clickable { onShare() }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(if (detailed) f.nameWithoutExtension else readableName(f.nameWithoutExtension), fontSize = 14.sp, modifier = Modifier.weight(1f))
         val (text, color) = when {
             sent || item?.state == Uploader.State.SENT -> "✓ in the repository" to MaterialTheme.colorScheme.primary
@@ -212,7 +216,8 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, detailed:
         }
         Text(text, color = color, fontSize = 12.sp)
         Spacer(Modifier.width(10.dp))
-        Text("Share ›", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+        Text("Share ›", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp,
+            modifier = Modifier.clickable { onShare() }.padding(horizontal = 4.dp, vertical = 8.dp))
     }
     if (item?.state == Uploader.State.FAILED) Muted(item.message)
     }
@@ -310,12 +315,14 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                         Text("Capsule just put on again")
                         Muted("Turn on if you took the capsule off and put it back on before this recording.")
                     }
+                    Spacer(Modifier.width(12.dp))
                     androidx.compose.material3.Switch(checked = rewear, onCheckedChange = { rewear = it })
                 }
             }
         }
 
-        MagnetLine(nav)
+        MagnetLine(nav, showMagnet = kind == Kind.KEYS)   // calibration and no-magnet: the magnet is off the nail
+        VoiceWarning()
         OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
 
         val ready = ui.status.linked && ui.mags.isNotEmpty()
@@ -471,5 +478,22 @@ fun DoneScreen(nav: Nav) {
         if (r.aborted || failed) OutlinedButton(onClick = { val k = s.kind; app.session.reset(); nav.reset(Screen.Experiments); nav.go(Screen.Setup(k)) },
             modifier = Modifier.fillMaxWidth()) { Text("Record again") }
         Button(onClick = finish, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+    }
+}
+
+/** Without an English voice the training cues are beeps only: say so where it matters, with the way to fix it. */
+@Composable
+fun VoiceWarning() {
+    val app = App.get()
+    val voice by app.cues.voice.collectAsState()
+    if (voice != "no_english" && voice != "error") return
+    val ctx = LocalContext.current
+    Section("No voice for the cues") {
+        Text(if (voice == "no_english") "The phone has no English text-to-speech voice, so key names are not spoken; training would be beeps only."
+            else "Text-to-speech does not work on this phone, so key names are not spoken; training would be beeps only.", color = Palette.warn)
+        OutlinedButton(onClick = {
+            try { ctx.startActivity(Intent("com.android.settings.TTS_SETTINGS")) }
+            catch (_: Exception) { ctx.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
+        }, modifier = Modifier.fillMaxWidth()) { Text("Open text-to-speech settings") }
     }
 }

@@ -38,7 +38,7 @@ class ScreenshotTest {
         status = Capsule.Status.CONNECTED, firmware = "0.1.4", bootReason = "power_on", batteryMv = 3980,
         mags = listOf(MagInfo(1, "QMC5883P", "ch0", 1000.0), MagInfo(2, "QMC5883P", "ch1", 1000.0)), imu = true,
         scan = listOf("SCAN begin mux=yes", "SCAN ch0 0x2C QMC5883P mag1", "SCAN ch1 0x2C QMC5883P mag2", "SCAN ch2 EMPTY HINT_PULLUPS", "SCAN end mags=2"),
-        rateHz = 100, rangeG = 30, osr = "8/8", measuredHz = 99.8, recentLoss = 0.002, lost = 3, received = 12034, rttMs = 18.0,
+        rateHz = 200, rangeG = 30, osr = "8/8", measuredHz = 199.6, recentLoss = 0.002, lost = 3, received = 12034, rttMs = 18.0,
         syncResidualMs = 0.6, driftPpm = 12.0,
         live = Capsule.Live(
             magUt = listOf(doubleArrayOf(31.2, -12.4, 40.8), doubleArrayOf(29.9, -10.1, 38.2)), sat = listOf(false, false),
@@ -119,7 +119,7 @@ class ScreenshotTest {
         shot("8-diagnostics")
     }
 
-    private val trained = Brain.Summary(trained = true, date = "Nov 11, 15:40", correct = 41, total = 48,
+    private val trained = Brain.Summary(trained = true, date = "Nov 11, 15:40", correct = 41, total = 48, savedMs = System.currentTimeMillis() - 86_400_000L,
         confusions = listOf(Triple("2", "5", 3), Triple("6", "9", 2), Triple("#", "9", 1)), weakKeys = listOf("5", "2", "9"), touches = 48)
 
     @Test fun homeTrained() {

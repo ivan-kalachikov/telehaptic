@@ -22,9 +22,14 @@ static QueueHandle_t txQueue;     // DATA packets
 static QueueHandle_t infoQueue;   // INFO lines: their own queue, so a full DATA queue cannot drop them
 static QueueHandle_t cmdQueue;
 static volatile bool hello = false;
-volatile uint32_t linkDroppedPackets = 0;
+volatile uint32_t linkDroppedPackets = 0;   // only the tx task counts (the loop counts into linkQueueFull)
+volatile uint32_t linkQueueFull = 0;
+volatile uint32_t linkDroppedInfo = 0;
+
+static volatile uint16_t connHandle = BLE_CONN_HANDLE_INVALID;
 
 static void onConnect(uint16_t conn) {
+  connHandle = conn;
   BLEConnection* c = Bluefruit.Connection(conn);
   c->requestPHY();
   c->requestDataLengthUpdate();
@@ -33,6 +38,7 @@ static void onConnect(uint16_t conn) {
 
 static void onDisconnect(uint16_t conn, uint8_t reason) {
   (void)conn;
+  connHandle = BLE_CONN_HANDLE_INVALID;
   char line[48];
   snprintf(line, sizeof line, "LINK disconnected reason=0x%02X", reason);
   serialLine(line);
@@ -106,6 +112,14 @@ void linkBegin() {
   xTaskCreate(txTask, "tx", 512, NULL, TASK_PRIO_LOW, NULL);
 }
 
+uint16_t linkPayloadMax() {
+  uint16_t h = connHandle;
+  BLEConnection* c = h == BLE_CONN_HANDLE_INVALID ? NULL : Bluefruit.Connection(h);
+  uint16_t mtu = c ? c->getMtu() : 247;
+  uint16_t room = mtu > 3 ? mtu - 3 : 0;
+  return room < PKT_MAX_PAYLOAD ? room : PKT_MAX_PAYLOAD;
+}
+
 bool linkConnected() {
   return Bluefruit.connected() && chrData.notifyEnabled();
 }
@@ -126,7 +140,7 @@ bool linkSendData(const uint8_t* buf, uint16_t len) {
   p.len = len;
   memcpy(p.buf, buf, len);
   if (xQueueSend(txQueue, &p, 0) != pdTRUE) {
-    linkDroppedPackets++;
+    linkQueueFull++;
     return false;
   }
   return true;
@@ -139,7 +153,7 @@ void linkInfo(const char* line) {
   p.kind = 1;
   p.len = strnlen(line, PKT_MAX_PAYLOAD);
   memcpy(p.buf, line, p.len);
-  xQueueSend(infoQueue, &p, pdMS_TO_TICKS(20));
+  if (xQueueSend(infoQueue, &p, pdMS_TO_TICKS(20)) != pdTRUE) linkDroppedInfo++;
 }
 
 // A terminal that keeps the port open but does not read would make Serial.write wait for ever

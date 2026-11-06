@@ -10,6 +10,8 @@ struct Mag {
   ChipType type;
   int16_t last[3];    // last good reading (repeated after an I2C error)
   uint32_t errors;    // failed reads since start
+  uint16_t badRun;    // consecutive failed or stale reads
+  uint32_t recoveries;  // times the configuration was written again after a bad run
 };
 
 struct MagConfig {

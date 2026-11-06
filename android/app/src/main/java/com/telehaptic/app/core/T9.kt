@@ -24,7 +24,10 @@ class T9(words: Sequence<Pair<String, Long>>) {
         if (digits.isEmpty()) return emptyList()
         val exact = byCode[digits]?.map { it.first } ?: emptyList()
         if (exact.isNotEmpty()) return exact.take(max)
-        val pre = (byPrefix[digits.take(6)] ?: emptyList()).filter { code(it.first)!!.startsWith(digits) }
+        // Beginnings of longer words. The prefix index holds up to 6 digits; beyond that the
+        // whole list is searched (about 47 thousand codes, about a millisecond).
+        val pre = if (digits.length <= 6) byPrefix[digits] ?: emptyList()
+        else byCode.entries.filter { it.key.startsWith(digits) }.flatMap { it.value }.sortedByDescending { it.second }.take(20)
         return pre.map { it.first.take(digits.length) }.distinct().take(max).ifEmpty { listOf(digits) }
     }
 

@@ -56,8 +56,15 @@ class Segmenter(var p: Params = Params()) {
 
     fun setRate(hz: Double) { if (hz > 0) rateHz = hz }
 
-    /** Forget the rest level; the next still moment becomes rest. */
-    fun clearRest() { rest = null }
+    /**
+     * Forget the rest level; the next still moment becomes rest, unless it looks like one of
+     * [guard] (key centres): a thumb already on a key when typing starts must not become rest.
+     * If the hand stays still near a key for [GUARD_MS], that is taken as rest after all.
+     */
+    fun clearRest(guard: List<DoubleArray> = emptyList()) { rest = null; restGuard = guard; guardSinceNs = -1 }
+
+    private var restGuard: List<DoubleArray> = emptyList()
+    private var guardSinceNs = -1L
 
     /** Sets rest explicitly (training measures it). */
     fun setRest(y: DoubleArray) { rest = y.copyOf() }
@@ -89,7 +96,14 @@ class Segmenter(var p: Params = Params()) {
         }
         val stable = maxSd < p.stableUt
         lastStable = stable
-        val r = rest ?: run { if (stable) rest = mean.copyOf(); return null }
+        val r = rest ?: run {
+            if (stable) {
+                val keyLike = restGuard.any { dist(mean, it) < p.onUt }
+                if (!keyLike || (guardSinceNs >= 0 && tNs - guardSinceNs > GUARD_MS * 1_000_000L)) rest = mean.copyOf()
+                else if (guardSinceNs < 0) guardSinceNs = tNs
+            }
+            return null
+        }
         val dev = dist(mean, r)
         lastDeviation = dev
 
@@ -134,6 +148,8 @@ class Segmenter(var p: Params = Params()) {
     }
 
     companion object {
+        const val GUARD_MS = 4000L
+
         fun dist(a: DoubleArray, b: DoubleArray): Double {
             var s = 0.0
             for (i in a.indices) s += (a[i] - b[i]) * (a[i] - b[i])

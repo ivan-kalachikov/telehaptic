@@ -32,7 +32,7 @@
 //   i16 acc[3]      raw IMU units
 #define PKT_VERSION 1
 #define PKT_HEADER 8
-#define PKT_MAX_PAYLOAD 244  // ATT MTU 247 - 3
+#define PKT_MAX_PAYLOAD 244  // ATT MTU 247 - 3; fewer samples per packet at a smaller MTU
 
 // flags: bit 3*i + a = magnetometer i, axis a saturated (i = 0..2, a = 0..2)
 #define FLAG_MOTOR    (1u << 9)   // vibration motor is on during this sample
@@ -40,6 +40,7 @@
 #define FLAG_STALE    (1u << 11)  // some magnetometer had no new data (DRDY = 0)
 #define FLAG_CONFIG   (1u << 12)  // settings changed, first sample with new ones
 #define FLAG_I2C_ERR  (1u << 13)  // a read failed; values of that sensor repeat the last good ones
+#define FLAG_IMU_ERR  (1u << 14)  // the failed read was the IMU's (bit 13 is set too)
 
 // ---- CTRL commands: 1 byte opcode + arguments ------------------------------
 #define CMD_RATE    0x01  // u16 Hz: 50 / 100 / 200
