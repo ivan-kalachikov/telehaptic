@@ -18,6 +18,10 @@ class CapsuleInfo {
     var batteryMv = 0
     var stats = ""
     var lastConfigLine = ""
+    // IMU scales: the capsule's IMU line if it came, else the firmware's defaults.
+    var accMgPerLsb = Proto.ACC_MG_PER_LSB
+    var gyrMdpsPerLsb = Proto.GYR_MDPS_PER_LSB
+    var imuScaleFromCapsule = false
 
     /** Returns a parsed PONG (token, ticks) if the line is one, else null. */
     fun apply(line: String): Pair<Long, Long>? {
@@ -52,6 +56,11 @@ class CapsuleInfo {
                 }
             }
             "BAT" -> batteryMv = kv["mv"]?.toIntOrNull() ?: batteryMv
+            "IMU" -> {
+                val a = kv["acc_mg_per_lsb"]?.toDoubleOrNull()
+                val g = kv["gyr_mdps_per_lsb"]?.toDoubleOrNull()
+                if (a != null && g != null) { accMgPerLsb = a; gyrMdpsPerLsb = g; imuScaleFromCapsule = true }
+            }
             "STATS" -> stats = line.trim()
             "PONG" -> {
                 val token = parts.getOrNull(1)?.toLongOrNull() ?: return null

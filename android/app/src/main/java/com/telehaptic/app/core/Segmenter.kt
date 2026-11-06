@@ -50,17 +50,28 @@ class Segmenter(var p: Params = Params()) {
     private val bufY = ArrayDeque<DoubleArray>()
     private val bufT = ArrayDeque<Long>()
     private var stableSince = -1L
+    private var stableRef: DoubleArray? = null   // window mean when the current still period began
     private var plateau: DoubleArray? = null
     private var emitted = false
 
     fun setRate(hz: Double) { if (hz > 0) rateHz = hz }
+
+    /**
+     * Forget the rest level; the next still moment becomes rest, unless it looks like one of
+     * [guard] (key centres): a thumb already on a key when typing starts must not become rest.
+     * If the hand stays still near a key for [GUARD_MS], that is taken as rest after all.
+     */
+    fun clearRest(guard: List<DoubleArray> = emptyList()) { rest = null; restGuard = guard; guardSinceNs = -1 }
+
+    private var restGuard: List<DoubleArray> = emptyList()
+    private var guardSinceNs = -1L
 
     /** Sets rest explicitly (training measures it). */
     fun setRest(y: DoubleArray) { rest = y.copyOf() }
 
     fun reset() {
         bufX.clear(); bufY.clear(); bufT.clear()
-        state = State.REST; stableSince = -1; plateau = null; emitted = false
+        state = State.REST; stableSince = -1; stableRef = null; plateau = null; emitted = false
     }
 
     /** Projection used for the checks: sensor difference if two sensors, else sensor 1. */
@@ -85,12 +96,22 @@ class Segmenter(var p: Params = Params()) {
         }
         val stable = maxSd < p.stableUt
         lastStable = stable
-        val r = rest ?: run { if (stable) rest = mean.copyOf(); return null }
+        val r = rest ?: run {
+            if (stable) {
+                val keyLike = restGuard.any { dist(mean, it) < p.onUt }
+                if (!keyLike || (guardSinceNs >= 0 && tNs - guardSinceNs > GUARD_MS * 1_000_000L)) rest = mean.copyOf()
+                else if (guardSinceNs < 0) guardSinceNs = tNs
+            }
+            return null
+        }
         val dev = dist(mean, r)
         lastDeviation = dev
 
         if (!stable) { stableSince = -1; return null }
-        if (stableSince < 0) stableSince = tNs
+        // A slow drift keeps each window "still" but is not a plateau: restart the still period
+        // whenever the mean has moved away from where it began.
+        val ref = stableRef
+        if (stableSince < 0 || ref == null || dist(mean, ref) > p.stableUt) { stableSince = tNs; stableRef = mean.copyOf() }
 
         when (state) {
             State.REST -> {
@@ -127,6 +148,8 @@ class Segmenter(var p: Params = Params()) {
     }
 
     companion object {
+        const val GUARD_MS = 4000L
+
         fun dist(a: DoubleArray, b: DoubleArray): Double {
             var s = 0.0
             for (i in a.indices) s += (a[i] - b[i]) * (a[i] - b[i])

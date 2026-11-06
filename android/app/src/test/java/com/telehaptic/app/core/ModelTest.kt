@@ -86,6 +86,13 @@ class ModelTest {
             repeat(40) { sample(none, Math.toRadians(40.0), 0.0) }
         }
         assertEquals(2, events.size)
+        // A slow slide (0.5 uT per sample) keeps every window still but is not a touch until it settles.
+        val before = events.size
+        repeat(120) { i -> sample(DoubleArray(6) { j -> if (j == 0) 0.5 * i else 0.0 }, Math.toRadians(40.0), 0.0) }
+        assertEquals(before, events.size)
+        repeat(30) { sample(DoubleArray(6) { j -> if (j == 0) 60.0 else 0.0 }, Math.toRadians(40.0), 0.0) }
+        assertEquals(before + 1, events.size)
+        assertEquals(60.0, events.last().y[0], 1.5)
         // The detected field is the plateau, not the edge.
         val ev = events[0]
         assertNotNull(ev)
@@ -109,5 +116,11 @@ class ModelTest {
         assertEquals("hello ", typing.display())        // the digits are gone, the space stays
         typing.key("#")
         assertEquals("hello", typing.display())
+    }
+
+    @Test fun t9FindsBeginningsOfLongWords() {
+        val t9 = T9(sequenceOf("understanding" to 100L, "under" to 50L))
+        val d = T9.code("understa")!!
+        assertEquals(listOf("understa"), t9.candidates(d))
     }
 }

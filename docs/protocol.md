@@ -17,6 +17,9 @@ When the format changes, change all of them together and raise `PKT_VERSION`.
 | INFO | `7e1a0004-5c2d-4b8e-9f3a-1d6c2b8e4a10` | notify + read, UTF-8 text lines |
 
 - Device name: `Telehaptic`.
+- External I2C runs at 100 kHz for the first bring-up (multiplexer and wires across the hand); two magnetometers take about 3 ms per tick.
+- INFO lines have their own send queue, so a full DATA queue cannot drop them. The app asks for the status again if a packet's sensor count does not match the last CFG line.
+- USB Serial lines are written only when they fit in the buffer, so a terminal that does not read cannot block the firmware.
 - MTU up to 247, so up to 244 payload bytes per notification.
 - The capsule asks for a 7.5–15 ms connection interval.
 - When the phone subscribes to INFO, the capsule sends its full status (below).
@@ -47,7 +50,7 @@ Sample:
 
 Without an IMU its values are zero.
 
-Samples per packet: (244 − 8) / S, so 7 with n = 2 and 6 with n = 3.
+Samples per packet: (P − 8) / S, where P = negotiated ATT MTU − 3, at most 244; at least 1. With MTU 247: 7 with n = 2 and 6 with n = 3. A packet always fits one notification.
 
 A packet is sent when it is full, but no later than 30 ms after its first sample.
 
@@ -61,6 +64,7 @@ A packet is sent when it is full, but no later than 30 ms after its first sample
 | 11 | some magnetometer had no new data (DRDY = 0); the value repeats |
 | 12 | new settings apply from this sample (rate, range, averaging, rescan) |
 | 13 | I2C read error: that sensor's values repeat the last good ones |
+| 14 | the read error was the IMU's (bit 13 is set too); the IMU values repeat the last good ones |
 
 Magnetometer order: a sensor on the main bus first, if any, then by multiplexer channel. Which sensor is on which channel is in the `SCAN` and `CFG` lines.
 
@@ -94,13 +98,13 @@ IMU ok LSM6DS3TR-C
 CFG rate=200 range=30 osr=8/8 n=2 imu=1 mag1=QMC5883P@ch0,1000 mag2=QMC5883P@ch1,1000
 IMU acc_mg_per_lsb=0.244 gyr_mdps_per_lsb=17.5 odr=208
 BAT mv=3987
-STATS uptime_s=120 samples=24000 overruns=0 dropped=0 imu_err=0 i2c_err=0,0
+STATS uptime_s=120 samples=24000 overruns=0 dropped=0 imu_err=0 i2c_err=0,0 info_dropped=0 recover=0,0
 MOTOR on idx=5012 t=1642291 ms=40
 MOTOR off idx=5020 t=1643602
 PONG 123456 1650000
 ```
 
-- `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`.
+- `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`. `software` means a software reset: either the stall monitor (the sample index had not moved for 2 s, for example an I2C transfer that never ended) or the reboot after flashing; RESETREAS does not tell them apart. The monitor is a FreeRTOS task, not the WDT peripheral, so flashing is unaffected.
 - `SCAN <where> …`:
   - `<where>` is `main` (the main bus) or `chN` (a multiplexer channel);
   - variants: address and chip, `UNSUPPORTED`, `UNKNOWN`, `OTHER <addresses>`, `EMPTY HINT_PULLUPS`, `MUX_ERROR`;
@@ -108,13 +112,15 @@ PONG 123456 1650000
 - `SCAN BUS_STUCK sda=0 scl=1`: before the scan SDA or SCL is held low. Nothing is sent on the bus then: the core's I2C driver waits without a timeout and would hang. Cause: wiring, a short to GND or missing pull-ups.
 - `CLOCK FAIL`: RTC2 is not counting; there will be no samples.
 - In `CFG` each magnetometer has its chip, place and LSB per gauss.
-- `MOTOR … idx`: sample index; `t`: XIAO clock at the command or when the motor stopped.
+- `MOTOR … idx`: sample index (for `off`: the first sample without the motor flag); `t`: XIAO clock at the command, or when the loop noticed the stop (within about 1 ms). A timer switches the motor off, so a slow command right after it does not lengthen the pulse.
 - `PONG <token> <t>`: t is taken when the ping is handled.
 - `BAT mv` comes every 5 s; how it is measured is in the comments of `telehaptic.ino`.
 - `STATS`:
   - `overruns`: how often the sampling fell a whole period behind;
   - `dropped`: packets that did not go out over the radio;
-  - `i2c_err`: read errors per magnetometer.
+  - `i2c_err`: read errors per magnetometer;
+  - `info_dropped`: INFO lines that did not fit the queue;
+  - `recover`: per magnetometer, how often its configuration was written again after 100 failed or stale reads in a row (a sensor or the multiplexer that lost power comes back this way).
 - Status = `FW`, `BOOT`, all `SCAN` lines of the last scan, `CFG`, `IMU`, `BAT`, `STATS`.
 
 ## Defaults and why

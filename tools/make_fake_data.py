@@ -194,6 +194,58 @@ def calibration(rng, hand, out, name):
     write_zip(out / f"{name}.zip", meta, samples, "\n".join(ev) + "\n", packets, "t_send_ns,t_recv_ns,token,t_xiao\n")
 
 
+def training(rng, hand, out, name):
+    """Holds as in the app's training (announce, +1 s press, 1.5 s hold, 1.5 s to the next announce),
+    then quick taps at one's own pace with a short plateau."""
+    lead = 2.5
+    holds = [k for b in range(2) for k in rng.permutation(KEYS)]
+    taps = [k for b in range(2) for k in rng.permutation(KEYS)]
+    t_holds_end = lead + len(holds) * 4.0 + 2.5
+    plan = []                       # (start, rise_end, plateau_end, release_end, key)
+    t = t_holds_end + 0.5
+    for k in taps:
+        rise, plat, rel = 0.06, rng.uniform(0.12, 0.3), 0.08
+        plan.append((t, t + rise, t + rise + plat, t + rise + plat + rel, k))
+        t += rise + plat + rel + rng.uniform(0.5, 0.9)
+    total = t + 1.0
+
+    def schedule(tt):
+        if lead <= tt < t_holds_end - 2.5:
+            i = int((tt - lead) // 4.0)
+            ph = (tt - lead) - i * 4.0
+            target = hand.keys[holds[i]]
+            if 1.0 <= ph < 1.1:
+                return hand.away + (target - hand.away) * (ph - 1.0) / 0.1
+            if 1.1 <= ph < 2.5:
+                return target
+            return hand.away
+        for (a, b, c, d, k) in plan:
+            if a <= tt < d:
+                target = hand.keys[k]
+                if tt < b:
+                    return hand.away + (target - hand.away) * (tt - a) / (b - a)
+                if tt < c:
+                    return target
+                return target + (hand.away - target) * (tt - c) / (d - c)
+        return hand.away
+    start_ns = int(rng.integers(10**12, 10**13))
+    samples, packets, n, _ = simulate(rng, hand, "TRAIN", "table", False, start_ns, total, schedule)
+    ev = ["t_ns,event,trial,key", f"{start_ns},start,-1,"]
+    for i, k in enumerate(holds):
+        a = lead + i * 4.0
+        ev += [f"{start_ns + int(a * 1e9)},announce,{i},{k}", f"{start_ns + int((a + 1.0) * 1e9)},press,{i},{k}",
+               f"{start_ns + int((a + 2.5) * 1e9)},release,{i},{k}"]
+    ev.append(f"{start_ns + int((t_holds_end - 0.1) * 1e9)},detector,-1,on_ut=8.00;stable_ut=1.50;window_ms=80;hold_ms=40;gyro_max_dps=60;rest=")
+    for i, (a, b, c, d, k) in enumerate(plan):
+        ev += [f"{start_ns + int((a - 0.45) * 1e9)},tap_cue,{i},{k}", f"{start_ns + int(b * 1e9)},tap_plateau,{i},{k}",
+               f"{start_ns + int((b + 0.12) * 1e9)},tap,{i},{k}"]
+    ev.append(f"{start_ns + int((total - 0.5) * 1e9)},end,-1,")
+    settings = {"lead_s": lead, "hold_s": 1.5, "rest_s": 2.5, "blocks": 2}
+    meta = meta_for("TRAIN", None, False, "8x2", start_ns, [], n, settings, 38)
+    meta["id"] = name
+    write_zip(out / f"{name}.zip", meta, samples, "\n".join(ev) + "\n", packets, "t_send_ns,t_recv_ns,token,t_xiao\n")
+
+
 def main():
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "fake_data")
     out.mkdir(parents=True, exist_ok=True)
@@ -204,6 +256,7 @@ def main():
     keys_recording(rng, hand, out, "KEYS_table_rewear_20261111-152000", "table", True)
     keys_recording(rng, hand, out, "KEYS_down_20261111-153000", "down", False)
     keys_recording(rng, hand, out, "NOMAG_table_20261111-154000", "table", False, magnet=False)
+    training(rng, hand, out, "TRAIN_20261111-155000")
     print(f"synthetic recordings in {out}/")
 
 

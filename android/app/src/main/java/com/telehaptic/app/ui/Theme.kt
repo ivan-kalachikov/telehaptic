@@ -34,7 +34,7 @@ object Palette {
     val accentDark = Color(0xFF7D9BFF)
     val keyLight = Color(0xFFE08A1E)
     val keyDark = Color(0xFFF0A443)
-    val ok = Color(0xFF1F8A4C)
+    val ok = Color(0xFF22A06B)   // status dot only; success text uses the accent
     val warn = Color(0xFFB26B00)
     val bad = Color(0xFFC23B3B)
 }
@@ -79,7 +79,7 @@ fun Section(title: String? = null, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (title != null) Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
@@ -95,7 +95,7 @@ fun Dot(color: Color) {
 
 @Composable
 fun Muted(text: String, modifier: Modifier = Modifier) {
-    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = modifier)
+    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = modifier)
 }
 
 @Composable

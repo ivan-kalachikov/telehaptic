@@ -16,6 +16,11 @@ bool imuBegin() {
   imu.settings.fifoModeWord = 0;
   if (imu.begin() != 0) return false;
   Wire1.setClock(400000);
+  // CTRL3_C (0x12) bit 6 BDU: output registers keep one sample until both bytes are read, so a
+  // burst read never mixes the low byte of one sample with the high byte of the next
+  // (LSM6DS3TR-C datasheet, CTRL3_C). The library does not set it; IF_INC (bit 2) stays as it is.
+  uint8_t c3 = 0;
+  if (imu.readRegister(&c3, 0x12) == 0) imu.writeRegister(0x12, (uint8_t)(c3 | 0x40));
   uint8_t id = 0;
   imu.readRegister(&id, 0x0F);  // WHO_AM_I; LSM6DS3TR-C = 0x6A (library header)
   return id == 0x6A;
@@ -24,7 +29,7 @@ bool imuBegin() {
 bool imuRead(int16_t gyr[3], int16_t acc[3]) {
   // OUTX_L_G (0x22) .. OUTZ_H_XL (0x2D): gyro x y z, then accel x y z, LSB first.
   // One burst; the library itself relies on register auto-increment for 2-byte reads.
-  uint8_t b[12];
+  uint8_t b[12] = {0};
   if (imu.readRegisterRegion(b, 0x22, 12) != 0) return false;
   for (int i = 0; i < 3; i++) {
     gyr[i] = (int16_t)((uint16_t)b[2 * i] | ((uint16_t)b[2 * i + 1] << 8));

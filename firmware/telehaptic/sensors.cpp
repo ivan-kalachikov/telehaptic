@@ -117,14 +117,17 @@ static int listAddresses(char* out, size_t len, uint8_t skip, bool onMainSkip) {
   return found;
 }
 
-static void addMag(uint8_t ch, uint8_t addr, ChipType t) {
-  if (magCount >= MAX_MAGS) return;
+static bool addMag(uint8_t ch, uint8_t addr, ChipType t) {
+  if (magCount >= MAX_MAGS) return false;
   Mag& m = mags[magCount++];
   m.channel = ch;
   m.addr = addr;
   m.type = t;
   m.last[0] = m.last[1] = m.last[2] = 0;
   m.errors = 0;
+  m.badRun = 0;
+  m.recoveries = 0;
+  return true;
 }
 
 // Looks for a supported magnetometer on the selected bus; emits one line.
@@ -144,9 +147,11 @@ static void scanOne(uint8_t ch, void (*emit)(const char*), bool hintIfEmpty) {
     ChipType t = identify(a, note, sizeof note);
     any = true;
     if (t == CHIP_QMC5883P || t == CHIP_QMC5883L) {
-      addMag(ch, a, t);
-      snprintf(line, sizeof line, "SCAN %s 0x%02X %s mag%u%s%s", where, a, chipName(t), magCount,
-               note[0] ? " NOTE " : "", note);
+      if (addMag(ch, a, t))
+        snprintf(line, sizeof line, "SCAN %s 0x%02X %s mag%u%s%s", where, a, chipName(t), magCount,
+                 note[0] ? " NOTE " : "", note);
+      else
+        snprintf(line, sizeof line, "SCAN %s 0x%02X %s IGNORED max %u magnetometers", where, a, chipName(t), MAX_MAGS);
     } else if (t == CHIP_HMC5883L) {
       snprintf(line, sizeof line, "SCAN %s 0x%02X HMC5883L UNSUPPORTED", where, a);
     } else {
@@ -168,12 +173,27 @@ static void scanOne(uint8_t ch, void (*emit)(const char*), bool hintIfEmpty) {
 // Both lines must idle high (pull-ups). A line held low would make the TWIM driver,
 // which waits for bus events without a timeout, hang on the first transfer.
 static bool busIdleHigh(char* line, size_t len) {
-  pinMode(PIN_WIRE_SDA, INPUT);
-  pinMode(PIN_WIRE_SCL, INPUT);
+  // While TWIM is enabled it owns the pins, so the recovery clocks below would not reach SCL:
+  // release the peripheral first (TwoWire::end disables TWIM in the nRF52 core).
+  Wire.end();
+  // Weak internal pull-ups, so lines with nothing connected do not float low.
+  pinMode(PIN_WIRE_SDA, INPUT_PULLUP);
+  pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
   delayMicroseconds(50);
   int sda = digitalRead(PIN_WIRE_SDA), scl = digitalRead(PIN_WIRE_SCL);
+  if (sda == LOW && scl == HIGH) {
+    // A slave stuck mid-byte holds SDA: clock SCL up to 9 times until it lets go (standard I2C recovery).
+    for (int i = 0; i < 9 && digitalRead(PIN_WIRE_SDA) == LOW; i++) {
+      pinMode(PIN_WIRE_SCL, OUTPUT);
+      digitalWrite(PIN_WIRE_SCL, LOW);
+      delayMicroseconds(5);
+      pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
+      delayMicroseconds(5);
+    }
+    sda = digitalRead(PIN_WIRE_SDA);
+  }
   Wire.begin();  // gives the pins back to the I2C peripheral
-  Wire.setClock(400000);
+  Wire.setClock(I2C_HZ);
   snprintf(line, len, "SCAN BUS_STUCK sda=%d scl=%d", sda, scl);
   return sda == HIGH && scl == HIGH;
 }
@@ -224,7 +244,7 @@ static uint8_t validOsr(uint8_t v) {
   return (v == 1 || v == 2 || v == 4 || v == 8) ? v : 8;
 }
 
-static void configureP(Mag& m, const MagConfig& cfg) {
+static bool configureP(Mag& m, const MagConfig& cfg) {
   // [QP] table 18: RNG 00 = 30 G, 01 = 12 G, 10 = 8 G, 11 = 2 G; SET/RESET 00 = on.
   uint8_t rng = cfg.rangeG == 2 ? 3 : cfg.rangeG == 8 ? 2 : cfg.rangeG == 12 ? 1 : 0;
   // [QP] table 17: OSR1 code 00 = 8, 01 = 4, 10 = 2, 11 = 1; OSR2 code 00 = 1 ... 11 = 8.
@@ -232,19 +252,28 @@ static void configureP(Mag& m, const MagConfig& cfg) {
   uint8_t osr2 = log2of(cfg.osrB);
   // MODE 01 = normal, ODR 11 = 200 Hz.
   uint8_t ctrl1 = (uint8_t)((osr2 << 6) | (osr1 << 4) | (0x3 << 2) | 0x1);
-  writeReg(m.addr, 0x0A, 0x00);           // suspend before changing mode [QP 9.2.3]
-  writeReg(m.addr, 0x29, 0x06);           // axis sign definition [QP 7]
-  writeReg(m.addr, 0x0B, (uint8_t)(rng << 2));
-  writeReg(m.addr, 0x0A, ctrl1);
+  bool ok = writeReg(m.addr, 0x0A, 0x00);      // suspend before changing mode [QP 9.2.3]
+  ok &= writeReg(m.addr, 0x29, 0x06);          // axis sign definition [QP 7]
+  ok &= writeReg(m.addr, 0x0B, (uint8_t)(rng << 2));
+  ok &= writeReg(m.addr, 0x0A, ctrl1);
+  return ok;
 }
 
-static void configureL(Mag& m, const MagConfig& cfg) {
+static bool configureL(Mag& m, const MagConfig& cfg) {
   // [QL] CTRL1: OSR 00 = 512, 01 = 256, 10 = 128, 11 = 64; RNG 00 = 2 G, 01 = 8 G;
   // ODR 11 = 200 Hz; MODE 01 = continuous.
   uint8_t osr = 3 - log2of(cfg.osrA);  // osrA 8 -> 512 -> code 00
   uint8_t rng = cfg.rangeG == 2 ? 0 : 1;
-  writeReg(m.addr, 0x0B, 0x01);
-  writeReg(m.addr, 0x09, (uint8_t)((osr << 6) | (rng << 4) | (0x3 << 2) | 0x1));
+  bool ok = writeReg(m.addr, 0x0B, 0x01);
+  ok &= writeReg(m.addr, 0x09, (uint8_t)((osr << 6) | (rng << 4) | (0x3 << 2) | 0x1));
+  return ok;
+}
+
+static MagConfig lastCfg = {30, 8, 8};
+
+static bool configureOne(Mag& m, const MagConfig& cfg) {
+  if (!muxSelect(m.channel)) return false;
+  return m.type == CHIP_QMC5883P ? configureP(m, cfg) : configureL(m, cfg);
 }
 
 void sensorsConfigure(MagConfig& cfg) {
@@ -264,10 +293,10 @@ void sensorsConfigure(MagConfig& cfg) {
   delay(100);
   for (uint8_t i = 0; i < magCount; i++) {
     Mag& m = mags[i];
-    muxSelect(m.channel);
-    if (m.type == CHIP_QMC5883P) configureP(m, cfg);
-    else configureL(m, cfg);
+    if (!configureOne(m, cfg)) m.errors++;
+    m.badRun = 0;
   }
+  lastCfg = cfg;
 }
 
 float lsbPerGauss(const Mag& m, const MagConfig& cfg) {
@@ -283,6 +312,20 @@ float lsbPerGauss(const Mag& m, const MagConfig& cfg) {
 }
 
 // ---------------------------------------------------------------- reading
+
+// A sensor that power-cycled comes back suspended with default registers: its reads still
+// succeed but DRDY stays 0. After a run of failed or stale reads (0.5 s at 200 Hz), write its
+// configuration again. Each attempt is a few register writes (no soft reset, no delay), so the
+// sampling keeps its pace even if the sensor is gone for good; attempts are counted in STATS.
+static const uint16_t BAD_RUN_RECOVER = 100;
+
+static void noteBad(Mag& m) {
+  if (++m.badRun < BAD_RUN_RECOVER) return;
+  m.badRun = 0;
+  m.recoveries++;
+  muxCurrent = 0xFE;
+  configureOne(m, lastCfg);
+}
 
 bool readMag(Mag& m, int16_t out[3], uint8_t& sat, bool& ovfl, bool& stale) {
   uint8_t b[9];
@@ -301,12 +344,15 @@ bool readMag(Mag& m, int16_t out[3], uint8_t& sat, bool& ovfl, bool& stale) {
   }
   if (!ok) {
     m.errors++;
+    muxCurrent = 0xFE;   // the multiplexer may have reset (supply dip): select the channel again next time
+    noteBad(m);
     out[0] = m.last[0]; out[1] = m.last[1]; out[2] = m.last[2];
     return false;
   }
   for (int a = 0; a < 3; a++) v[a] = (int16_t)((uint16_t)b[2 * a] | ((uint16_t)b[2 * a + 1] << 8));
   stale = (status & 0x01) == 0;  // DRDY
   ovfl = (status & 0x02) != 0;   // OVFL / OVL
+  if (stale) noteBad(m); else m.badRun = 0;
   int32_t limit = m.type == CHIP_QMC5883P ? 30000 : 32767;
   for (int a = 0; a < 3; a++) {
     int32_t x = v[a];

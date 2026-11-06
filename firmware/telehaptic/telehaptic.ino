@@ -60,12 +60,17 @@ static uint16_t rateHz = 200;  // 200 Hz: more accelerometer points at the jolt 
 static bool imuOk = false;
 static bool configChanged = true;
 
-static uint32_t sampleIndex = 0;
+static volatile uint32_t sampleIndex = 0;
 static uint32_t schedStart = 0, schedN = 0, nextTick = 0;
 static uint32_t overruns = 0, imuErrors = 0;
 
-static bool motorOn = false;
-static uint32_t motorEnd = 0;
+// The motor is switched off by a FreeRTOS one-shot timer, so a slow command (rescan, range)
+// handled right after MOTOR cannot stretch the pulse. The timer callback only writes the pin
+// and flags; the loop reports "MOTOR off" (clockNow() is used from the loop task only).
+static volatile bool motorOn = false;
+static volatile bool motorOffPending = false;
+static volatile uint32_t motorOffIdx = 0;
+static TimerHandle_t motorTimer = NULL;
 
 static uint16_t batteryMv = 0;
 static const char* bootReason = "";
@@ -79,10 +84,11 @@ static uint32_t pktFirstT = 0;
 static const uint32_t FLUSH_TICKS = 983;  // 30 ms
 
 static uint16_t sampleSize(uint8_t n) { return 6 + 6 * n + 12; }
-static uint8_t maxPerPacket(uint8_t n) { return (PKT_MAX_PAYLOAD - PKT_HEADER) / sampleSize(n); }
+static uint8_t maxPerPacket(uint8_t n);
 
 // Scan report, kept to resend when the phone (re)subscribes.
-static char scanLines[20][96];
+static const uint8_t SCAN_LINES_MAX = 32;  // worst case: begin, main, 8 channels x 3 candidates, end
+static char scanLines[SCAN_LINES_MAX][96];
 static uint8_t scanLineCount = 0;
 
 static void put16(uint8_t* p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
@@ -91,7 +97,7 @@ static void put32(uint8_t* p, uint32_t v) { p[0] = v; p[1] = v >> 8; p[2] = v >>
 // ---------------------------------------------------------------- reports
 
 static void emitScanLine(const char* line) {
-  if (scanLineCount < 20) {
+  if (scanLineCount < SCAN_LINES_MAX) {
     strncpy(scanLines[scanLineCount], line, sizeof scanLines[0] - 1);
     scanLines[scanLineCount][sizeof scanLines[0] - 1] = 0;
     scanLineCount++;
@@ -132,9 +138,12 @@ static void emitStatus() {
   emitBattery();
   int pos = snprintf(line, sizeof line, "STATS uptime_s=%lu samples=%lu overruns=%lu dropped=%lu imu_err=%lu i2c_err=",
                      (unsigned long)(clockNow() / TICKS_PER_S), (unsigned long)sampleIndex,
-                     (unsigned long)overruns, (unsigned long)linkDroppedPackets, (unsigned long)imuErrors);
+                     (unsigned long)overruns, (unsigned long)(linkDroppedPackets + linkQueueFull), (unsigned long)imuErrors);
   for (uint8_t i = 0; i < magCount && pos < (int)sizeof line; i++)
     pos += snprintf(line + pos, sizeof line - pos, i ? ",%lu" : "%lu", (unsigned long)mags[i].errors);
+  if (pos < (int)sizeof line) pos += snprintf(line + pos, sizeof line - pos, " info_dropped=%lu recover=", (unsigned long)linkDroppedInfo);
+  for (uint8_t i = 0; i < magCount && pos < (int)sizeof line; i++)
+    pos += snprintf(line + pos, sizeof line - pos, i ? ",%lu" : "%lu", (unsigned long)mags[i].recoveries);
   linkInfo(line);
 }
 
@@ -187,8 +196,13 @@ static void takeSample(uint32_t t) {
     if (stale) flags |= FLAG_STALE;
     for (int a = 0; a < 3; a++, p += 2) put16(p, (uint16_t)v[a]);
   }
-  int16_t g[3] = {0, 0, 0}, a[3] = {0, 0, 0};
-  if (imuOk && !imuRead(g, a)) { imuErrors++; flags |= FLAG_I2C_ERR; }
+  // On a read error the last good IMU values repeat, as for the magnetometers (protocol.md).
+  static int16_t g[3] = {0, 0, 0}, a[3] = {0, 0, 0};
+  int16_t g1[3], a1[3];
+  if (imuOk) {
+    if (imuRead(g1, a1)) { memcpy(g, g1, sizeof g); memcpy(a, a1, sizeof a); }
+    else { imuErrors++; flags |= FLAG_I2C_ERR | FLAG_IMU_ERR; }
+  }
   for (int k = 0; k < 3; k++, p += 2) put16(p, (uint16_t)g[k]);
   for (int k = 0; k < 3; k++, p += 2) put16(p, (uint16_t)a[k]);
   put16(s + 4, flags);
@@ -196,6 +210,14 @@ static void takeSample(uint32_t t) {
   sampleIndex++;
   pktCount++;
   if (pktCount >= maxPerPacket(pktMags)) flushPacket();
+}
+
+// Samples that fit one notification at the negotiated MTU (Bluefruit splits longer ones into
+// several notifications, which the app could not parse). At least one.
+static uint8_t maxPerPacket(uint8_t n) {
+  uint16_t room = linkPayloadMax();
+  int k = room > PKT_HEADER ? (room - PKT_HEADER) / sampleSize(n) : 0;
+  return k < 1 ? 1 : (uint8_t)k;
 }
 
 // Plain-text values on USB Serial twice a second, for checks without the app.
@@ -208,7 +230,7 @@ static void printLive() {
     pos += snprintf(line + pos, sizeof line - pos, " mag%u_uT=%ld,%ld,%ld", i + 1, x, y, z);
   }
   snprintf(line + pos, sizeof line - pos, " bat_mv=%u", batteryMv);
-  Serial.println(line);
+  serialLine(line);
 }
 
 // ---------------------------------------------------------------- schedule
@@ -271,10 +293,20 @@ static void handleCommand(const Command& c, uint32_t now) {
       }
       break;
     case CMD_MOTOR: {
+      if (c.len < 3) { linkInfo("ERR motor needs u16 ms"); break; }
       uint16_t ms = u16 < 1 ? 1 : (u16 > 2000 ? 2000 : u16);
+      TickType_t ticks = pdMS_TO_TICKS(ms);
+      if (ticks < 1) ticks = 1;
       digitalWrite(MOTOR_PIN, HIGH);
       motorOn = true;
-      motorEnd = now + (uint32_t)ms * TICKS_PER_S / 1000;
+      motorOffPending = false;
+      // Changing the period also starts the timer; a running pulse is restarted with the new length.
+      if (motorTimer == NULL || xTimerChangePeriod(motorTimer, ticks, 0) != pdPASS) {
+        digitalWrite(MOTOR_PIN, LOW);
+        motorOn = false;
+        linkInfo("ERR motor timer");
+        break;
+      }
       snprintf(line, sizeof line, "MOTOR on idx=%lu t=%lu ms=%u", (unsigned long)sampleIndex,
                (unsigned long)now, ms);
       linkInfo(line);
@@ -300,6 +332,34 @@ static void handleCommand(const Command& c, uint32_t now) {
   }
 }
 
+// Stall monitor: a FreeRTOS task (not the WDT peripheral, so flashing is unaffected). If the sample
+// index has not moved for 2 s, the loop is stuck, most likely in an I2C transfer that never ends
+// (the core's TWIM driver waits without a timeout). Restart; the next scan checks the bus lines
+// first and skips I2C if a line is held low, so a broken wire cannot cause a restart loop.
+static volatile bool monitorArmed = false;
+static volatile bool monitorSetup = true;   // during setup(): the scan may hang, not the sampling
+
+static void motorOffCb(TimerHandle_t) {
+  digitalWrite(MOTOR_PIN, LOW);
+  motorOn = false;
+  motorOffIdx = sampleIndex;
+  motorOffPending = true;
+}
+
+static void monitorTask(void*) {
+  uint32_t last = sampleIndex, stuckMs = 0, setupMs = 0;
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(500));
+    // A hang inside setup() (an I2C transfer that never ends during the first scan) would
+    // otherwise need a power cycle. The scan takes well under a second; allow 10 s.
+    if (monitorSetup) { setupMs += 500; if (setupMs >= 10000) NVIC_SystemReset(); continue; }
+    if (!monitorArmed) { last = sampleIndex; stuckMs = 0; continue; }
+    if (sampleIndex == last) stuckMs += 500; else stuckMs = 0;
+    last = sampleIndex;
+    if (stuckMs >= 2000) NVIC_SystemReset();   // reported after the restart as BOOT reason=software
+  }
+}
+
 // ---------------------------------------------------------------- setup / loop
 
 void setup() {
@@ -310,7 +370,7 @@ void setup() {
 
   Serial.begin(115200);
   Wire.begin();
-  Wire.setClock(400000);  // TCA9548A, QMC5883P/L: up to 400 kHz
+  Wire.setClock(I2C_HZ);  // see sensors.h
 
   const char* reason = resetReason();
   linkBegin();   // starts the SoftDevice and with it the 32 kHz clock
@@ -322,7 +382,11 @@ void setup() {
   snprintf(line, sizeof line, "BOOT reason=%s", reason);
   linkInfo(line);
   bootReason = reason;
-  if (clockNow() == 0) linkInfo("CLOCK FAIL rtc2 not counting");
+  delay(2);
+  motorTimer = xTimerCreate("motor", 1, pdFALSE, NULL, motorOffCb);
+  xTaskCreate(monitorTask, "monitor", 256, NULL, TASK_PRIO_NORMAL, NULL);   // watches setup() too
+  bool clockOk = clockNow() != 0;
+  if (!clockOk) linkInfo("CLOCK FAIL rtc2 not counting");
   rescan();
   imuOk = imuBegin();
   linkInfo(imuOk ? "IMU ok LSM6DS3TR-C" : "IMU FAIL");
@@ -335,20 +399,26 @@ void setup() {
   nextBattery = now + 5 * TICKS_PER_S;
   nextLive = now + TICKS_PER_S / 2;
   restartSchedule(now);
+  monitorArmed = clockOk;   // without a clock there are no samples; restarting would not help
+  monitorSetup = false;
 }
 
 void loop() {
   uint32_t now = clockNow();
 
   Command c;
-  while (linkTakeCommand(c)) handleCommand(c, now);
-  if (linkTakeHello()) emitStatus();
+  bool handled = false;
+  // One command per pass, so a burst of slow commands (rescans) never starves sampling long
+  // enough to trip the stall monitor.
+  if (linkTakeCommand(c)) { handleCommand(c, clockNow()); handled = true; }
+  if (linkTakeHello()) { emitStatus(); handled = true; }
+  if (handled) now = clockNow();  // rescan / range / averaging block for 100-250 ms
 
-  if (motorOn && (int32_t)(now - motorEnd) >= 0) {
-    digitalWrite(MOTOR_PIN, LOW);
-    motorOn = false;
-    char line[48];
-    snprintf(line, sizeof line, "MOTOR off idx=%lu t=%lu", (unsigned long)sampleIndex, (unsigned long)now);
+  if (motorOffPending) {
+    motorOffPending = false;
+    char line[64];
+    // idx = first sample without the motor flag; t = when the loop noticed (within ~1 ms).
+    snprintf(line, sizeof line, "MOTOR off idx=%lu t=%lu", (unsigned long)motorOffIdx, (unsigned long)now);
     linkInfo(line);
   }
 

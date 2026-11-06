@@ -10,6 +10,8 @@ struct Mag {
   ChipType type;
   int16_t last[3];    // last good reading (repeated after an I2C error)
   uint32_t errors;    // failed reads since start
+  uint16_t badRun;    // consecutive failed or stale reads
+  uint32_t recoveries;  // times the configuration was written again after a bad run
 };
 
 struct MagConfig {
@@ -19,6 +21,9 @@ struct MagConfig {
 };
 
 static const uint8_t NO_MUX = 0xFF;
+// 100 kHz for the first bring-up: the bus runs through the multiplexer and wires across the hand.
+// Two magnetometers at 100 kHz take about 3 ms per tick, inside the 5 ms of 200 Hz (counted as overruns if not).
+static const uint32_t I2C_HZ = 100000;
 static const uint8_t MAX_MAGS = 3;
 
 extern Mag mags[MAX_MAGS];

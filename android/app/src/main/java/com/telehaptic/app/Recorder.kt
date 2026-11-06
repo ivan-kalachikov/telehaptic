@@ -62,6 +62,7 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
     val dir = File(ctx.filesDir, "recordings").apply { mkdirs() }
     private val h = capsule.handler
     private val main = Handler(Looper.getMainLooper())
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private var open = false
     private var spec: RecordingSpec? = null
@@ -93,11 +94,27 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
 
     init {
         capsule.addListener(this)
+        // A recording cut off by a killed app leaves its folder behind: keep it as a stopped recording.
+        io.execute {
+            dir.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }   // zip cut off mid-write; its folder is still in rec/
+            File(ctx.filesDir, "rec").listFiles()?.filter { it.isDirectory }?.forEach { d ->
+                try {
+                    val z = File(dir, d.name + "_ABORTED.zip")
+                    if (!z.exists()) zip(d, z)
+                    d.deleteRecursively()
+                    log.w("rec", "interrupted recording ${d.name} kept as ${z.name}")
+                } catch (e: Exception) { log.w("rec", "interrupted ${d.name}", e) }
+            }
+        }
     }
 
-    val isOpen get() = open
+    @Volatile private var starting = false
+    val isOpen get() = open || starting
 
-    fun start(s: RecordingSpec, onStarted: (String) -> Unit) {
+    /** False if a recording is already open or starting. */
+    fun start(s: RecordingSpec, onStarted: (String) -> Unit): Boolean {
+        if (open || starting) return false
+        starting = true
         val now = SystemClock.elapsedRealtimeNanos()
         val date = Date()
         h.post {
@@ -118,25 +135,40 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
                 syncW = writer(File(w, "sync.csv"), RecordFormat.SYNC_HEADER)
                 infoW = writer(File(w, "info.csv"), RecordFormat.INFO_HEADER)
                 open = true
+                lastFlushNs = now
+                // A provisional meta.json: a recording cut off by a killed app can still be analysed.
+                File(w, "meta.json").writeText(meta(s, true, now).put("provisional", true).toString(2))
                 log.i("rec", "start $id, magnetometers $nMags")
             } catch (e: Exception) {
                 error = "Could not start the recording: $e"
                 log.w("rec", "start", e)
             }
+            starting = false
             main.post { onStarted(id) }
         }
+        return true
     }
 
     /** Time is taken at the call, the write happens on the capsule thread. */
-    fun event(name: String, trial: Int = -1, key: String = "") {
-        val t = SystemClock.elapsedRealtimeNanos()
+    fun event(name: String, trial: Int = -1, key: String = "") = eventAt(SystemClock.elapsedRealtimeNanos(), name, trial, key)
+
+    /** An event at a known phone time (e.g. the plateau start found by the detector). */
+    fun eventAt(t: Long, name: String, trial: Int = -1, key: String = "") {
         h.post {
             if (!open) return@post
             write(events, "$t,$name,$trial,$key\n")
+            flush(events)
         }
     }
 
     private fun writer(f: File, header: String) = BufferedWriter(FileWriter(f), 1 shl 16).apply { write(header); write("\n") }
+
+    // Low-rate files are flushed at once, samples once a second: a killed app loses at most a second.
+    private var lastFlushNs = 0L
+
+    private fun flush(w: BufferedWriter?) {
+        try { w?.flush() } catch (e: Exception) { if (error == null) error = "Write error: $e" }
+    }
 
     private fun write(w: BufferedWriter?, s: String) {
         try { w?.write(s) } catch (e: Exception) { if (error == null) error = "Write error: $e" }
@@ -163,24 +195,34 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
             if (s.flags and Proto.FLAG_I2C_ERR != 0) i2c++
             if (s.motor()) motorSamples++
         }
+        if (rxNs - lastFlushNs > 1_000_000_000L) { lastFlushNs = rxNs; flush(samples); flush(packets) }
     }
 
     override fun onInfo(rxNs: Long, line: String) {
         if (!open) return
         write(infoW, "$rxNs,${RecordFormat.csvQuote(line)}\n")
+        flush(infoW)
         if (line.startsWith("BAT ")) line.substringAfter("mv=").toIntOrNull()?.let { if (it in 1 until minBattery) minBattery = it }
     }
 
     override fun onPong(sentNs: Long, rxNs: Long, token: Long, ticks: Long) {
         if (!open) return
         write(syncW, "$sentNs,$rxNs,$token,$ticks\n")
+        flush(syncW)
     }
 
     override fun onLink(connected: Boolean) {
         if (!open) return
         val t = SystemClock.elapsedRealtimeNanos()
         write(events, "$t,${if (connected) "link_up" else "link_down"},-1,\n")
+        flush(events)
         if (!connected) { disconnects++; expected = -1 }
+    }
+
+    override fun onStall(stalled: Boolean) {
+        if (!open) return
+        write(events, "${SystemClock.elapsedRealtimeNanos()},${if (stalled) "data_stalled" else "data_back"},-1,\n")
+        flush(events)
     }
 
     // ------------------------------------------------------------ finish
@@ -190,24 +232,33 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         h.post {
             val s = spec
             val w = work
-            var file: File? = null
-            if (open && s != null && w != null) {
-                open = false
-                for (x in listOf(samples, events, packets, syncW, infoW)) try { x?.close() } catch (_: Exception) {}
+            val result = { f: File?, err: String? ->
+                RecordingResult(f, err, aborted, (endNs - startNs) / 1e9, count, lost, saturated, stale, i2c, disconnects)
+            }
+            if (!(open && s != null && w != null)) { val r = result(null, error); main.post { done(r) }; return@post }
+            open = false
+            for (x in listOf(samples, events, packets, syncW, infoW)) try { x?.close() } catch (_: Exception) {}
+            val metaText = try { meta(s, aborted, endNs).toString(2) } catch (e: Exception) { error = "Could not write meta.json: $e"; "{}" }
+            val r0 = result(null, error)
+            val name = id + (if (aborted) "_ABORTED" else "") + ".zip"
+            // Zipping takes a moment; keep it off the capsule thread so BLE handling never waits.
+            io.execute {
+                var file: File? = null
+                var err = r0.error
                 try {
-                    File(w, "meta.json").writeText(meta(s, aborted, endNs).toString(2))
-                    val z = File(dir, id + (if (aborted) "_ABORTED" else "") + ".zip")
+                    File(w, "meta.json").writeText(metaText)
+                    val z = File(dir, name)
                     zip(w, z)
                     w.deleteRecursively()
                     file = z
-                    log.i("rec", "saved ${z.name}, ${z.length()} bytes, samples $count, lost $lost")
+                    log.i("rec", "saved ${z.name}, ${z.length()} bytes, samples ${r0.samples}, lost ${r0.lost}")
                 } catch (e: Exception) {
-                    error = "Could not save the recording: $e"
+                    err = "Could not save the recording: $e"
                     log.w("rec", "save", e)
                 }
+                val r = r0.copy(file = file, error = err)
+                main.post { done(r) }
             }
-            val r = RecordingResult(file, error, aborted, (endNs - startNs) / 1e9, count, lost, saturated, stale, i2c, disconnects)
-            main.post { done(r) }
         }
     }
 
@@ -256,7 +307,8 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
             .put("motor_pulses", p.motorPulses).put("motor_pulse_ms", p.motorPulseMs))
         m.put("capsule_at_start", startCapsule)
         m.put("capsule_at_end", capsuleJson())
-        m.put("imu_scale", JSONObject().put("acc_mg_per_lsb", Proto.ACC_MG_PER_LSB).put("gyr_mdps_per_lsb", Proto.GYR_MDPS_PER_LSB))
+        m.put("imu_scale", JSONObject().put("acc_mg_per_lsb", capsule.info.accMgPerLsb).put("gyr_mdps_per_lsb", capsule.info.gyrMdpsPerLsb)
+            .put("from", if (capsule.info.imuScaleFromCapsule) "capsule IMU line" else "app defaults"))
         val (ready, resid, drift) = capsule.syncSnapshot()
         m.put("time_sync", JSONObject()
             .put("method", "lower envelope of (phone receive time - capsule time), 1 s bins, linear fit over 20 s; t_ns in samples.csv uses the fit current at that moment; packets.csv and sync.csv allow a refit")
@@ -277,13 +329,16 @@ class Recorder(private val ctx: Context, private val capsule: Capsule, private v
         return m
     }
 
+    /** Written under a temporary name and renamed when complete: the list and the uploader never see half a zip. */
     private fun zip(src: File, dst: File) {
-        ZipOutputStream(FileOutputStream(dst)).use { z ->
+        val part = File(dst.parentFile, dst.name + ".part")
+        ZipOutputStream(FileOutputStream(part)).use { z ->
             for (f in src.listFiles()!!.sortedBy { it.name }) {
                 z.putNextEntry(ZipEntry(f.name))
                 FileInputStream(f).use { it.copyTo(z) }
                 z.closeEntry()
             }
         }
+        if (!part.renameTo(dst)) { part.delete(); throw java.io.IOException("could not rename ${part.name}") }
     }
 }

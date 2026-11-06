@@ -6,7 +6,12 @@ import kotlin.random.Random
 object Keys {
     val ALL = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#")
     private val FINGERS = listOf("index", "middle", "ring", "little")
-    private val PHALANGES = listOf("phalanx near the palm", "middle phalanx", "phalanx at the tip")
+    private val PHALANGES = listOf("segment near the palm", "middle segment", "tip segment")
+
+    private val LETTERS = listOf(".", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz", "next", "space", "erase")
+
+    /** What a key does in typing: its T9 letters, or its function. */
+    fun letters(key: String) = LETTERS.getOrElse(ALL.indexOf(key)) { "" }
 
     fun row(key: String) = ALL.indexOf(key) / 3
     fun col(key: String) = ALL.indexOf(key) % 3
@@ -31,8 +36,8 @@ object Keys {
 /** What a recording is. Names go into file names and meta.json. */
 enum class Kind(val code: String) { CALIBRATION("CAL"), KEYS("KEYS"), NO_MAGNET("NOMAG"), TRAIN("TRAIN"), RETRAIN("RETRAIN") }
 enum class Posture(val code: String, val title: String) {
-    TABLE("table", "Hand on the table, on its edge"),
-    DOWN("down", "Arm hanging along the body"),
+    TABLE("table", "On the table, on its edge"),
+    DOWN("down", "Hanging along the body"),
 }
 
 /** One cue of a recording, at a time from the start. */

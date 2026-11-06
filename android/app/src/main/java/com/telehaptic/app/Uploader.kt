@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -34,7 +35,7 @@ class Uploader(private val ctx: Context, private val prefs: Prefs, private val l
     fun list(): List<File> = (recordings().listFiles { f -> f.name.endsWith(".zip") } ?: emptyArray()).sortedByDescending { it.name }
 
     private fun set(name: String, st: State, msg: String = "") {
-        _items.value = _items.value + (name to Item(name, st, msg))
+        _items.update { it + (name to Item(name, st, msg)) }   // called from the upload thread and the main thread
     }
 
     fun upload(f: File) {

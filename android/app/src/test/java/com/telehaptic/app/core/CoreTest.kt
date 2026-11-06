@@ -101,8 +101,8 @@ class CoreTest {
             for (i in 1 until s.size) assertFalse("repeat at $i", s[i] == s[i - 1])
         }
         assertEquals("little", Keys.finger("#"))
-        assertEquals("phalanx at the tip", Keys.phalanx("#"))
-        assertEquals("phalanx near the palm", Keys.phalanx("4"))
+        assertEquals("tip segment", Keys.phalanx("#"))
+        assertEquals("segment near the palm", Keys.phalanx("4"))
     }
 
     @Test fun plans() {
@@ -156,5 +156,15 @@ class CoreTest {
         assertEquals("KEYS_table_rewear_20261111-153012", RecordFormat.name(Kind.KEYS, Posture.TABLE, true, "20261111-153012"))
         assertEquals("CAL_20261111-153012", RecordFormat.name(Kind.CALIBRATION, Posture.TABLE, true, "20261111-153012"))
         assertEquals("idx,t_xiao,t_ns,m1x,m1y,m1z,m2x,m2y,m2z,gx,gy,gz,ax,ay,az,flags", RecordFormat.samplesHeader(2))
+    }
+
+    @Test fun fQuantileMatchesTables() {
+        // Reference values: scipy.stats.f.ppf / chi2.ppf.
+        assertEquals(4.9646, Stat.fQuantile(0.95, 1.0, 10.0), 1e-3)
+        assertEquals(4.9382, Stat.fQuantile(0.99, 3.0, 20.0), 1e-3)
+        assertEquals(5.0697, Stat.fQuantile(0.999, 6.0, 31.0), 1e-3)
+        // With plenty of data the rule becomes the chi-square one (22.46 for 6 numbers).
+        assertEquals(22.458, Lda.rejectD2(6, 1_000_000, 1_000_000), 0.05)
+        assertEquals(44.156, Lda.rejectD2(6, 4, 36), 0.05)
     }
 }
