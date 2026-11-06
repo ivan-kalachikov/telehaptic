@@ -32,11 +32,13 @@ import java.util.Locale
 object Palette {
     val accentLight = Color(0xFF2C56C9)
     val accentDark = Color(0xFF7D9BFF)
-    val keyLight = Color(0xFFE08A1E)
+    val keyLight = Color(0xFFB86A00)   // darker than the dark-theme orange: about 3.9:1 on white
     val keyDark = Color(0xFFF0A443)
     val ok = Color(0xFF22A06B)   // status dot only; success text uses the accent
-    val warn = Color(0xFFB26B00)
-    val bad = Color(0xFFC23B3B)
+    /** Set by AppTheme: hints and errors need other tones on a dark background to stay readable. */
+    @Volatile var dark = false
+    val warn get() = if (dark) Color(0xFFE0A050) else Color(0xFF8A5200)   // about 4.5:1 or more on the cards
+    val bad get() = if (dark) Color(0xFFE07A7A) else Color(0xFFB02E2E)
 }
 
 @Composable
@@ -45,6 +47,7 @@ fun keyColor() = if (isSystemInDarkTheme()) Palette.keyDark else Palette.keyLigh
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
+    Palette.dark = dark
     val scheme = if (dark) darkColorScheme(
         primary = Palette.accentDark,
         onPrimary = Color(0xFF0D1530),

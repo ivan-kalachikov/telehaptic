@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         App.get().capsule.onUiResume()
+        App.get().cues.recheck()   // a voice installed in the system settings works without a restart
     }
 
     fun keepScreenOn(on: Boolean) {

@@ -21,6 +21,7 @@ class CapsuleService : Service() {
         val n = notification(this, text)
         try {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            foreground = true
         } catch (e: Exception) {
             App.get().log.w("service", "startForeground failed", e)
             stopSelf()
@@ -28,6 +29,7 @@ class CapsuleService : Service() {
         }
         // Stopping goes through here too: startForeground must run once for every startForegroundService call.
         if (intent?.action == ACTION_STOP) {
+            foreground = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -38,6 +40,8 @@ class CapsuleService : Service() {
         private const val CHANNEL = "link"
         private const val ACTION_STOP = "stop"
         @Volatile private var text = "Connecting to the capsule…"
+        /** Updates go out only while the service shows its notification: never an orphan notification. */
+        @Volatile private var foreground = false
 
         private fun notification(ctx: Context, t: String): Notification {
             val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -59,6 +63,7 @@ class CapsuleService : Service() {
         fun update(ctx: Context, t: String) {
             if (t == text) return
             text = t
+            if (!foreground) return
             try { ctx.getSystemService(NotificationManager::class.java).notify(1, notification(ctx, t)) } catch (_: Exception) {}
         }
 
@@ -74,7 +79,9 @@ class CapsuleService : Service() {
             try {
                 ctx.startForegroundService(Intent(ctx, CapsuleService::class.java).setAction(ACTION_STOP))
             } catch (e: Exception) {
+                foreground = false
                 ctx.stopService(Intent(ctx, CapsuleService::class.java))
+                try { ctx.getSystemService(NotificationManager::class.java).cancel(1) } catch (_: Exception) {}
             }
         }
     }

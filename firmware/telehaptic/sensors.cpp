@@ -339,7 +339,9 @@ bool readMag(Mag& m, int16_t out[3], uint8_t& sat, bool& ovfl, bool& stale) {
     ok = readRegs(m.addr, 0x01, b, 9);  // X,Y,Z, 2 unused, STATUS [QP], PX4
     status = b[8];
   } else if (ok) {
-    ok = readRegs(m.addr, 0x00, b, 7);  // X,Y,Z, STATUS [QL]
+    // [QL]: DRDY is reset by reading any data register, so STATUS (0x06) is read first, on its
+    // own; a burst 0x00..0x06 could see DRDY already cleared and flag every sample stale.
+    ok = readRegs(m.addr, 0x06, b + 6, 1) && readRegs(m.addr, 0x00, b, 6);
     status = b[6];
   }
   if (!ok) {

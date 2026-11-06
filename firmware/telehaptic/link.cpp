@@ -31,6 +31,7 @@ static volatile uint16_t connHandle = BLE_CONN_HANDLE_INVALID;
 static void onConnect(uint16_t conn) {
   connHandle = conn;
   BLEConnection* c = Bluefruit.Connection(conn);
+  if (!c) return;   // the callback is deferred; the link may already be gone
   c->requestPHY();
   c->requestDataLengthUpdate();
   c->requestMtuExchange(247);
@@ -112,6 +113,8 @@ void linkBegin() {
   xTaskCreate(txTask, "tx", 512, NULL, TASK_PRIO_LOW, NULL);
 }
 
+// The BLE task may free the connection between Connection() and getMtu(); the value read then is
+// clamped to PKT_MAX_PAYLOAD below, so the packet buffer cannot overflow.
 uint16_t linkPayloadMax() {
   uint16_t h = connHandle;
   BLEConnection* c = h == BLE_CONN_HANDLE_INVALID ? NULL : Bluefruit.Connection(h);

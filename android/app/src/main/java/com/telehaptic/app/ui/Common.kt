@@ -72,7 +72,7 @@ fun statusTitle(s: Capsule.Status) = when (s) {
     Capsule.Status.CONNECTING -> "Connecting…"
     Capsule.Status.CONNECTED -> "Connected"
     Capsule.Status.NO_DATA -> "Connected, but no data"
-    Capsule.Status.RECONNECTING -> "Connection lost, reconnecting…"
+    Capsule.Status.RECONNECTING -> "Capsule lost, reconnecting…"
 }
 
 fun statusHint(s: Capsule.Status) = when (s) {

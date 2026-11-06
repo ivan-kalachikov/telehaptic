@@ -114,6 +114,7 @@ class EndToEndTest {
         while (app.training.ui.value.phase != Training.Phase.TAPS && guard++ < 10_000) cap.run(20) { who.act() }
         cap.run(3000) { who.act() }
         val before = app.training.ui.value.index
+        cap.sending = false
         app.capsule.testLink(false); cap.idleCapsule(); cap.run(20)
         val paused = app.training.ui.value
         assertTrue("paused on link loss", paused.paused)
@@ -121,8 +122,12 @@ class EndToEndTest {
         // Touches while paused are not taken.
         cap.touch("5"); cap.run(400); cap.touch(null); cap.run(400)
         assertEquals(before, app.training.ui.value.index)
-        // Back: training goes on by itself after a short countdown, no tap on the phone needed.
-        app.capsule.testLink(true); cap.idleCapsule(); cap.run(500)
+        // Reconnected but no data yet: not announced as back, still paused.
+        app.capsule.testLink(true); cap.idleCapsule(); cap.run(1000)
+        assertTrue("no data yet: still paused", app.training.ui.value.paused)
+        assertTrue(app.training.ui.value.hint, app.training.ui.value.hint.contains("lost"))
+        // Data again: training goes on by itself after a short countdown, no tap on the phone needed.
+        cap.sending = true; cap.run(500)
         assertTrue("still paused during the countdown", app.training.ui.value.paused)
         cap.run(3000)
         assertTrue("resumed by itself", !app.training.ui.value.paused)
