@@ -68,8 +68,12 @@ static uint32_t overruns = 0, imuErrors = 0;
 // handled right after MOTOR cannot stretch the pulse. The timer callback only writes the pin
 // and flags; the loop reports "MOTOR off" (clockNow() is used from the loop task only).
 static volatile bool motorOn = false;
-static volatile bool motorOffPending = false;
-static volatile uint32_t motorOffIdx = 0;
+static volatile TickType_t motorStartTick = 0, motorLenTicks = 0;  // guards against a late callback of an earlier pulse
+// The "off" sample is found in takeSample (the first sample taken without the flag), so the
+// reported idx is exact; the loop reports it, so t is when the report went out.
+static bool motorWasOn = false;
+static bool motorOffPending = false;
+static uint32_t motorOffIdx = 0;
 static TimerHandle_t motorTimer = NULL;
 
 static uint16_t batteryMv = 0;
@@ -164,13 +168,23 @@ static void readBattery() {
 
 // ---------------------------------------------------------------- packets
 
+static uint32_t linkMtuTooSmall = 0;
+
 static void flushPacket() {
   if (pktCount == 0) return;
   pkt[0] = PKT_VERSION;
   pkt[1] = (uint8_t)((pktMags & 0x3) | (imuOk ? 0x4 : 0));
   put16(pkt + 2, pktSeq++);
   put32(pkt + 4, sampleIndex - pktCount);
-  if (linkConnected()) linkSendData(pkt, PKT_HEADER + pktCount * sampleSize(pktMags));
+  uint16_t len = PKT_HEADER + pktCount * sampleSize(pktMags);
+  if (linkConnected()) {
+    // Even one sample does not fit the negotiated MTU: Bluefruit would split it into pieces the
+    // app cannot parse. Not sent; said once (until restart) and counted.
+    if (len > linkPayloadMax()) {
+      linkMtuTooSmall++;
+      if (linkMtuTooSmall == 1) linkInfo("ERR mtu too small for one sample");
+    } else linkSendData(pkt, len);
+  }
   pktCount = 0;
 }
 
@@ -182,7 +196,10 @@ static void takeSample(uint32_t t) {
   uint8_t* s = pkt + PKT_HEADER + pktCount * sampleSize(pktMags);
   uint16_t flags = 0;
   if (configChanged) { flags |= FLAG_CONFIG; configChanged = false; }
-  if (motorOn) flags |= FLAG_MOTOR;
+  bool on = motorOn;   // read once: the timer may switch it off during this sample
+  if (on) flags |= FLAG_MOTOR;
+  if (motorWasOn && !on) { motorOffIdx = sampleIndex; motorOffPending = true; }
+  motorWasOn = on;
 
   put32(s, t);
   uint8_t* p = s + 6;
@@ -297,9 +314,10 @@ static void handleCommand(const Command& c, uint32_t now) {
       uint16_t ms = u16 < 1 ? 1 : (u16 > 2000 ? 2000 : u16);
       TickType_t ticks = pdMS_TO_TICKS(ms);
       if (ticks < 1) ticks = 1;
+      motorStartTick = xTaskGetTickCount();
+      motorLenTicks = ticks;
       digitalWrite(MOTOR_PIN, HIGH);
       motorOn = true;
-      motorOffPending = false;
       // Changing the period also starts the timer; a running pulse is restarted with the new length.
       if (motorTimer == NULL || xTimerChangePeriod(motorTimer, ticks, 0) != pdPASS) {
         digitalWrite(MOTOR_PIN, LOW);
@@ -340,10 +358,10 @@ static volatile bool monitorArmed = false;
 static volatile bool monitorSetup = true;   // during setup(): the scan may hang, not the sampling
 
 static void motorOffCb(TimerHandle_t) {
+  // An expiry of the previous pulse that slipped in while a new one was being started: ignore it.
+  if ((TickType_t)(xTaskGetTickCount() - motorStartTick) < motorLenTicks) return;
   digitalWrite(MOTOR_PIN, LOW);
   motorOn = false;
-  motorOffIdx = sampleIndex;
-  motorOffPending = true;
 }
 
 static void monitorTask(void*) {
@@ -406,6 +424,13 @@ void setup() {
 void loop() {
   uint32_t now = clockNow();
 
+  if (motorOffPending) {   // before commands, so a new MOTOR command cannot hide this report
+    motorOffPending = false;
+    char line[64];
+    snprintf(line, sizeof line, "MOTOR off idx=%lu t=%lu", (unsigned long)motorOffIdx, (unsigned long)now);
+    linkInfo(line);
+  }
+
   Command c;
   bool handled = false;
   // One command per pass, so a burst of slow commands (rescans) never starves sampling long
@@ -413,14 +438,6 @@ void loop() {
   if (linkTakeCommand(c)) { handleCommand(c, clockNow()); handled = true; }
   if (linkTakeHello()) { emitStatus(); handled = true; }
   if (handled) now = clockNow();  // rescan / range / averaging block for 100-250 ms
-
-  if (motorOffPending) {
-    motorOffPending = false;
-    char line[64];
-    // idx = first sample without the motor flag; t = when the loop noticed (within ~1 ms).
-    snprintf(line, sizeof line, "MOTOR off idx=%lu t=%lu", (unsigned long)motorOffIdx, (unsigned long)now);
-    linkInfo(line);
-  }
 
   if ((int32_t)(now - nextTick) >= 0) {
     uint32_t period = TICKS_PER_S / rateHz;

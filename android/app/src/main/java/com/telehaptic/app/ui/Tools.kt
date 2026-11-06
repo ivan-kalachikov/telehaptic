@@ -2,6 +2,10 @@
 
 package com.telehaptic.app.ui
 
+import androidx.compose.ui.semantics.Role
+
+import androidx.compose.foundation.selection.toggleable
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -176,21 +180,21 @@ fun SettingsScreen(nav: Nav) {
 
     Page("Settings", nav) {
         Section {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().toggleable(value = detailed, role = Role.Switch) { detailed = it; p.detailed = it }, verticalAlignment = Alignment.CenterVertically) {
                 Column1(Modifier.weight(1f)) {
                     Text("Detailed mode")
                     Muted("Rates, losses, voltage and model confidence on the main screens.")
                 }
                 Spacer(Modifier.width(12.dp))
-                Switch(checked = detailed, onCheckedChange = { detailed = it; p.detailed = it })
+                Switch(checked = detailed, onCheckedChange = null)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().toggleable(value = speak, role = Role.Switch) { speak = it; p.speakTyping = it }, verticalAlignment = Alignment.CenterVertically) {
                 Column1(Modifier.weight(1f)) {
                     Text("Speak while typing")
                     Muted("The word on space and full stop, the new word on *, \"erase\" on #.")
                 }
                 Spacer(Modifier.width(12.dp))
-                Switch(checked = speak, onCheckedChange = { speak = it; p.speakTyping = it })
+                Switch(checked = speak, onCheckedChange = null)
             }
         }
         Section("Magnet and sensors") { MagnetFields() }
@@ -199,9 +203,9 @@ fun SettingsScreen(nav: Nav) {
             OutlinedTextField(value = repo, onValueChange = { repo = it; p.githubRepo = it }, label = { Text("Repository") }, placeholder = { Text("owner/repo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = token, onValueChange = { token = it; p.githubToken = it }, label = { Text("Token") }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().toggleable(value = auto, role = Role.Switch) { auto = it; p.autoUpload = it }, verticalAlignment = Alignment.CenterVertically) {
                 Text("Send right after each recording", modifier = Modifier.weight(1f))
-                Switch(checked = auto, onCheckedChange = { auto = it; p.autoUpload = it })
+                Switch(checked = auto, onCheckedChange = null)
             }
             OutlinedButton(onClick = {
                 check = "Checking…"

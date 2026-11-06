@@ -2,6 +2,7 @@
 
 package com.telehaptic.app.ui
 
+import androidx.compose.material3.MaterialTheme
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -75,12 +76,13 @@ fun LearnCards(nav: Nav, linked: Boolean) {
             } else Text("Model trained · ${age(s.savedMs)}", fontWeight = FontWeight.SemiBold)
             if (!linked) Muted("Connect the capsule to re-fit or train.")
             if (!fresh) {
-                Button(onClick = { nav.go(Screen.Retrain) }, enabled = linked, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Capsule put on again? Re-fit, about a minute") }
+                Button(onClick = { nav.go(Screen.Retrain) }, enabled = linked, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Capsule put on again? Re-fit, about a minute") }
             } else {
                 OutlinedButton(onClick = { nav.go(Screen.Retrain) }, enabled = linked, modifier = Modifier.fillMaxWidth()) { Text("Re-fit, about a minute") }
             }
             TextButton(onClick = { nav.go(Screen.Train) }, enabled = linked) { Text("Train from scratch (replaces the model)") }
         } else {
+            Text("Type with your thumb on the segments of your fingers, laid out like a phone keypad. First the phone learns how your hand feels each key.")
             Muted("About 4 minutes: 24 touches with a hold, then 24 quick taps. The model learns right on the phone.")
             if (!linked) Muted("Connect the capsule first.")
             Button(onClick = { nav.go(Screen.Train) }, enabled = linked, modifier = Modifier.fillMaxWidth()) { Text("Start training") }
@@ -88,7 +90,7 @@ fun LearnCards(nav: Nav, linked: Boolean) {
     }
     if (s.trained) Section("Typing") {
         Muted("Type without looking: a short click for every key read, a long buzz for a touch not like any key. The phone says each word on space.")
-        if (fresh) Button(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start typing") }
+        if (fresh) Button(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Start typing") }
         else OutlinedButton(onClick = { nav.go(Screen.Typing) }, modifier = Modifier.fillMaxWidth()) { Text("Start typing") }
     }
 }
@@ -124,7 +126,7 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
     DisposableEffect(Unit) { onDispose { app.training.close() } }
     val running = u.phase == Training.Phase.HOLDS || u.phase == Training.Phase.TAPS || u.phase == Training.Phase.STARTING
     BackHandler(enabled = running) { askCancel = true }
-    val title = if (retrain || u.retrain) "Re-fit" else "Training"
+    val title = when { u.practice -> "Practice"; retrain || u.retrain -> "Re-fit"; else -> "Training" }
 
     if (askCancel) AlertDialog(
         onDismissRequest = { askCancel = false },
@@ -166,7 +168,7 @@ fun TrainScreen(nav: Nav, retrain: Boolean) {
                     key = u.key, holding = holding,
                     recognized = u.phase == Training.Phase.TAPS && now < u.flashUntil,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { app.training.pause(!u.paused) }, enabled = !u.paused || cap.status == com.telehaptic.app.Capsule.Status.CONNECTED) {
                         Text(if (u.paused) "Resume" else "Pause")
                     }
@@ -220,12 +222,14 @@ private fun TrainIntro(nav: Nav) {
         Text("Part 1: 24 touches with a hold. The phone says the key, then one beep: touch it and hold. Two beeps: release.")
         Text("Part 2: 24 quick taps at your own pace. The capsule clicks when a touch is accepted.")
         Muted("About 4 minutes. Hand in a comfortable position, magnet on the nail.")
+        HandDiagram("", Mark.NONE, Modifier.fillMaxWidth(), letters = true)
+        Muted("Index finger 1 2 3, middle 4 5 6, ring 7 8 9, little finger * 0 #; the segment near the palm first.")
     }
     MagnetLine(nav)
     VoiceWarning()
     val missing = readiness()
     if (missing.isNotEmpty()) Text(missing, color = Palette.warn)
-    Button(onClick = { app.training.startTraining() }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start") }
+    Button(onClick = { app.training.startTraining() }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Start") }
 }
 
 @Composable
@@ -233,12 +237,13 @@ private fun RetrainIntro(weak: List<String>, nav: Nav) {
     val app = App.get()
     val missing = readiness()
     Section {
-        Text("Quick taps on every key. The model adjusts to how the capsule sits now.")
-        Muted("Use it after putting the capsule on again. About a minute.")
+        Text("Quick taps on every key, so the model adjusts to how the capsule sits now.")
+        Muted("Use it after putting the capsule on again. About a minute; if the result is worse, the earlier model is kept.")
     }
     MagnetLine(nav)
+    VoiceWarning()
     if (missing.isNotEmpty()) Text(missing, color = Palette.warn)
-    Button(onClick = { app.training.startRetrain(Keys.ALL, 2) }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) {
+    Button(onClick = { app.training.startRetrain(Keys.ALL, 2) }, enabled = missing.isEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
         Text("Start: all keys, 2 taps each")
     }
     if (weak.isNotEmpty()) {
@@ -269,7 +274,8 @@ private fun ResultBlock(u: Training.Ui, nav: Nav, linked: Boolean) {
         Text("${f0(was * 100)}% → ${f0(now * 100)}%", fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Muted(if (u.full) "Recognised taps before and after the re-fit." else "Recognised taps on the practised keys, before and after.")
         if (detailed) Muted("Before: the old model on the new taps (${u.before.correct} of ${u.before.total}). After: the new model, each tap left out of its own training (${r.correct} of ${r.total}).")
-        if (!u.kept) Text("The new taps did not help, so the previous model is kept. Try again, touching the way you do when typing.", color = Palette.warn)
+        if (u.undone) Text("Re-fit undone: the earlier model is back.", color = MaterialTheme.colorScheme.primary)
+        else if (!u.kept) Text("The new taps did not help, so the previous model is kept. Try again, touching the way you do when typing.", color = Palette.warn)
         else if (u.canUndo) TextButton(onClick = { app.training.undo() }) { Text("Undo the re-fit") }
     } else {
         Text("Recognises ${f0(r.share * 100)}% of quick taps", fontSize = 26.sp, fontWeight = FontWeight.Bold)
@@ -348,6 +354,8 @@ fun TypingScreen(nav: Nav) {
                 TextButton(onClick = { app.capsule.connect() }) { Text("Connect") }
             }
         }
+        VoiceWarning()
+        Muted("Start with the hand relaxed and the thumb away from the fingers for a second.")
         if (u.dictError) Text("The word list could not be loaded: the digits are shown as typed, without words. Details in Logs.", color = Palette.warn)
         else if (!u.ready) Muted("Loading the dictionary…")
         Section {

@@ -35,6 +35,8 @@ class FakeCapsule(private val app: App, seed: Int = 1) {
     private var motorUntilNs = 0L
     private var ringUntilNs = 0L
     var motorPulses = 0; private set
+    /** False: the capsule is out of reach, no packets arrive (time still passes). */
+    var sending = true
 
     // The thumb: where it is going and how far along the way (50 ms per move).
     private var from = DoubleArray(6)
@@ -85,7 +87,7 @@ class FakeCapsule(private val app: App, seed: Int = 1) {
         while (left > 0) {
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
             val now = SystemClock.elapsedRealtimeNanos()
-            packet(now)
+            if (sending) packet(now)
             idleCapsule()
             shadowOf(Looper.getMainLooper()).idle()
             each()

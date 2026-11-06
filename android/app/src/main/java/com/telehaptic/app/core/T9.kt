@@ -78,10 +78,28 @@ class Typing(private val t9: T9) {
         digits = ""; variant = 0
     }
 
+    /**
+     * Erases one key press. Inside a word: its last digit. After a space or a full stop: that
+     * character. Right after a committed word: the word goes back into digits (minus its last
+     * one), so the next keys continue it instead of starting a new word glued to it.
+     */
     fun erase() {
-        if (digits.isNotEmpty()) { digits = digits.dropLast(1); variant = 0 }
-        else if (text.isNotEmpty()) text.setLength(text.length - 1)
+        if (digits.isNotEmpty()) { digits = digits.dropLast(1); variant = 0; return }
+        if (text.isEmpty()) return
+        val last = text[text.length - 1]
+        val code = code(last.toString())
+        if (code == null && !last.isDigit()) { text.setLength(text.length - 1); return }
+        var start = text.length
+        while (start > 0 && (code(text[start - 1].toString()) != null || text[start - 1].isDigit())) start--
+        val word = text.substring(start)
+        text.setLength(start)
+        val wordDigits = if (word.all { it.isDigit() }) word else T9.code(word) ?: word
+        digits = wordDigits.dropLast(1)
+        val c = candidates()
+        variant = c.indexOf(word.dropLast(1)).coerceAtLeast(0)
     }
+
+    private fun code(s: String) = T9.code(s)?.takeIf { s.isNotEmpty() }
 
     fun clear() { text = StringBuilder(); digits = ""; variant = 0 }
 

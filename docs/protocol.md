@@ -50,7 +50,7 @@ Sample:
 
 Without an IMU its values are zero.
 
-Samples per packet: (P − 8) / S, where P = negotiated ATT MTU − 3, at most 244; at least 1. With MTU 247: 7 with n = 2 and 6 with n = 3. A packet always fits one notification.
+Samples per packet: (P − 8) / S, where P = negotiated ATT MTU − 3, at most 244; at least 1. With MTU 247: 7 with n = 2 and 6 with n = 3. A packet is never split across notifications: if even one sample does not fit (MTU below about 55), nothing is sent and the capsule says `ERR mtu too small for one sample` once.
 
 A packet is sent when it is full, but no later than 30 ms after its first sample.
 
@@ -112,7 +112,7 @@ PONG 123456 1650000
 - `SCAN BUS_STUCK sda=0 scl=1`: before the scan SDA or SCL is held low. Nothing is sent on the bus then: the core's I2C driver waits without a timeout and would hang. Cause: wiring, a short to GND or missing pull-ups.
 - `CLOCK FAIL`: RTC2 is not counting; there will be no samples.
 - In `CFG` each magnetometer has its chip, place and LSB per gauss.
-- `MOTOR … idx`: sample index (for `off`: the first sample without the motor flag); `t`: XIAO clock at the command, or when the loop noticed the stop (within about 1 ms). A timer switches the motor off, so a slow command right after it does not lengthen the pulse.
+- `MOTOR … idx`: sample index (for `off`: the first sample without the motor flag, exact); `t`: XIAO clock at the command, or when the `off` line was sent (it can be later than the stop by a sample period or a slow command; use idx for timing). A timer switches the motor off, so a slow command right after it does not lengthen the pulse.
 - `PONG <token> <t>`: t is taken when the ping is handled.
 - `BAT mv` comes every 5 s; how it is measured is in the comments of `telehaptic.ino`.
 - `STATS`:

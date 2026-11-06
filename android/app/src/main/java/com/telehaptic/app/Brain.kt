@@ -212,7 +212,7 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
             trained = engine.model != null, date = j.optString("date"), correct = j.optInt("correct"), total = j.optInt("total"),
             confusions = (0 until (conf?.length() ?: 0)).map { i -> conf!!.getJSONArray(i).let { Triple(it.getString(0), it.getString(1), it.getInt(2)) } },
             weakKeys = j.optJSONArray("weak")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
-            touches = all.size, features = features.code, savedMs = j.optLong("saved_ms", modelFile.lastModified()),
+            touches = all.size, features = features.code, savedMs = j.optLong("saved_ms", 0),
         )
         keyY = engine.model?.let { lda -> lda.keys.map { k -> engine.segmenter.yOf(meanOf(all, k), all.any { t -> t.x[3] != 0.0 }) } } ?: emptyList()
     }

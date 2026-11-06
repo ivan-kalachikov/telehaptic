@@ -37,8 +37,7 @@ class Session(private val app: App) {
     init {
         // Capsule lost while recording: warn at once; if it is not back in 5 s, stop, the rest would be lost anyway.
         app.capsule.addListener(object : Capsule.Listener {
-            override fun onLink(connected: Boolean) { main.post { linkChange(connected) } }
-            override fun onStall(stalled: Boolean) { main.post { linkChange(!stalled) } }
+            override fun onUsable(usable: Boolean) { main.post { linkChange(usable) } }
         })
     }
 
