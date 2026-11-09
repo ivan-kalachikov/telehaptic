@@ -68,6 +68,7 @@ BOSS_TOP = 8.0          # top of the threaded boss above the base bottom
 # sits, touching the highest point; the gap under the ruler 40 mm left and right of that point.
 ARCH_DROP_AT_40 = 5.0   # mm; 5 is a placeholder, not a measurement
 SADDLE_MIN = 1.6        # saddle thickness in the middle, under the strap channel
+ROOF = 0.8              # solid strap-channel roof in the saddle (4 layers at 0.2 mm), bridged in one piece
 
 CLEAR = 0.6             # gap around each part in its pocket (total)
 WALL = 1.6
@@ -324,10 +325,14 @@ def saddle_field(rng):
     for px, py in SCREW_XY:
         lattice = smin(lattice, np.hypot(X - px, Y - py) - (HEAD_D / 2 + 1.4), 0.6)   # solid around each screw
         RS = np.minimum(RS, np.hypot(X - px, Y - py))
-    lattice = np.maximum(lattice, O)                 # stay inside the outline
+    band = np.abs(Y) - (CH_HY + 2.4)                 # over the strap channel and its side strips
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     for k, z in enumerate(zs):
-        d = rounded_and(lattice + 0.6, (z - Z_TOP) + 0.6, 0.6)   # rounded skin-side edges of the bars
+        # The channel roof is solid for ROOF mm: a plain bridge across the channel. The lattice
+        # holes start above it, so no bar hangs in the air over the channel while printing.
+        roof = np.maximum(band, z - (STRAP_THICK + ROOF))
+        lat = np.maximum(np.minimum(lattice, roof), O)          # stay inside the outline
+        d = rounded_and(lat + 0.6, (z - Z_TOP) + 0.6, 0.6)       # rounded skin-side edges of the bars
         outer = rounded_and(O + 2.0, (z - Z_TOP) + 2.0, 2.0)    # rounded outer skin-side edge
         d = np.maximum(d, outer)
         d = np.maximum(d, -z)                                     # flat face on the bed
