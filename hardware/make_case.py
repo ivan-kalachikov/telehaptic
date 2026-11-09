@@ -25,8 +25,12 @@ PARTS = {
 }
 # In the tray the parts lie in a stack, long side along the fingers (y): battery at the bottom,
 # the multiplexer on it, the XIAO on top with its USB socket towards the knuckles (+y).
-STACK_H = 10.0           # what the multiplexer and the XIAO add above the battery, with foam tape
-SENSOR_DISTANCE = 46.0   # centre to centre of the two chips; enter the same number in the app
+STACK_H = 13.0           # what the multiplexer and the XIAO add above the battery: boards, parts on them,
+                         # 2 mm foam tape between the layers so the solder joints and wires under the XIAO fit
+WIRE_SIDE = 3.5          # room on each long side of the tray for solder joints and bent wires (the pins of the
+                         # multiplexer and of the XIAO are along their long edges, which face these walls)
+WIRE_END = 1.5           # room at each short end of the tray
+SENSOR_DISTANCE = 53.0   # centre to centre of the two chips; enter the same number in the app
 STRAP_WIDTH = 25.0       # elastic band width; slots are made 1 mm wider
 CLEAR = 0.6              # gap around each part in its pocket (total, both sides)
 WALL = 1.6
@@ -48,8 +52,8 @@ def build():
     xx, xy = PARTS["xiao"]
     bl, bw, bh = PARTS["battery"]
     # Tray inside: the stack, long sides along y.
-    tray_ix = max(my, xy, bw) + CLEAR
-    tray_iy = max(mx, xx, bl) + CLEAR
+    tray_ix = max(my, xy, bw) + CLEAR + 2 * WIRE_SIDE
+    tray_iy = max(mx, xx, bl) + CLEAR + 2 * WIRE_END
     half_gap = SENSOR_DISTANCE / 2 - px / 2 - WALL      # inner edge of a sensor pocket wall
     if tray_ix / 2 + WALL > half_gap - 0.5:
         raise SystemExit(f"Tray ({tray_ix:.1f} mm inside) does not fit between the sensors: "
@@ -64,15 +68,19 @@ def build():
         cx = s * (end - 2.5 - slot_w / 2)
         plate -= box(cx - slot_w / 2, -(STRAP_WIDTH + 1) / 2, -1, cx + slot_w / 2, (STRAP_WIDTH + 1) / 2, PLATE + 1)
     parts = plate
-    # Sensor pockets: sensor 1 at +x (index side), sensor 2 at -x.
+    # Sensor pockets: sensor 1 at +x (index side), sensor 2 at -x. Four L-shaped corner stops hold
+    # the module in place and in its orientation; the sides stay open, so the wires can leave on
+    # whichever edge the module's pins are.
+    leg = 4.0
     for s in (-1, 1):
         cx = s * SENSOR_DISTANCE / 2
-        outer = box(cx - px / 2 - WALL, -py / 2 - WALL, PLATE, cx + px / 2 + WALL, py / 2 + WALL, PLATE + POCKET_H)
-        inner = box(cx - px / 2, -py / 2, PLATE - 0.01, cx + px / 2, py / 2, PLATE + POCKET_H + 1)
-        # Notch towards the tray for the wires.
-        notch_x = cx - s * (px / 2 + WALL / 2)
-        notch = box(notch_x - WALL, -4, PLATE + 0.8, notch_x + WALL, 4, PLATE + POCKET_H + 1)
-        parts = parts + (outer - inner - notch)
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                x_in, y_in = cx + sx * px / 2, sy * py / 2          # inner corner
+                x_out, y_out = x_in + sx * WALL, y_in + sy * WALL
+                a = box(min(x_in - sx * leg, x_out), min(y_in, y_out), PLATE, max(x_in - sx * leg, x_out), max(y_in, y_out), PLATE + POCKET_H)
+                b = box(min(x_in, x_out), min(y_in - sy * leg, y_out), PLATE, max(x_in, x_out), max(y_in - sy * leg, y_out), PLATE + POCKET_H)
+                parts = parts + a + b
         # Orientation mark: an arrow engraved in the pocket floor along +x, the same for both sensors.
         ax = box(cx - 4, -0.6, PLATE - 0.4, cx + 2, 0.6, PLATE + 0.1)
         head = Manifold.extrude(_tri(cx + 2, 0.0, 2.5), 0.5).translate([0, 0, PLATE - 0.4])
