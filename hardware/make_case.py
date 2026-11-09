@@ -51,8 +51,19 @@ STACK_H = 11.0          # tray height: multiplexer + foam + XIAO with its USB so
 WIRE_SIDE = 2.75        # room on each long side of the tray for solder joints and bent wires
 WIRE_END = 1.5          # room at each short end of the tray
 SENSOR_DISTANCE = 50.0  # centre to centre of the two chips; enter the same number in the app
-STRAP_WIDTH = 20.0      # elastic band width: it runs in a channel between the base and the saddle
+STRAP_WIDTH = 4.0       # strap width: it runs in a channel between the base and the saddle
 STRAP_THICK = 1.6       # channel depth (an elastic band is about 1-1.5 mm thick)
+# The two parts are held by four printed screws with a cylindrical slotted head (flat screwdriver):
+# from the skin side through the saddle into a threaded boss of the base; the head sits flush in a
+# counterbore of the saddle. Coarse 45-degree thread so it prints without supports.
+SCREW_XY = [(sx * 25.0, sy * 16.5) for sx in (-1, 1) for sy in (-1, 1)]   # beside the sensor pockets: clear of the tray, its switch lever and the strap channel
+SCREW_D = 6.0           # thread major diameter
+SCREW_P = 1.5           # pitch
+SCREW_DEPTH = 0.65      # thread depth (45-degree flanks)
+THREAD_CLEAR = 0.2      # radial clearance of the thread in the base
+HEAD_D, HEAD_H = 9.5, 2.2   # cylindrical head
+SLOT_W, SLOT_DEPTH = 1.6, 1.1
+BOSS_TOP = 8.0          # top of the threaded boss above the base bottom
 # Back of the hand: hand relaxed, a straight ruler across the back of the hand where the capsule
 # sits, touching the highest point; the gap under the ruler 40 mm left and right of that point.
 ARCH_DROP_AT_40 = 5.0   # mm; 5 is a placeholder, not a measurement
@@ -141,9 +152,14 @@ if SW_D + 0.4 > TRAY_IY - PARTS["mux"][0]:
 if bw_ > TRAY_IX + 2 * WALL + 4 or bl_ > TRAY_IY + 2 * WALL + 6:
     print(f"note: the battery ({bl_:.0f} x {bw_:.0f}) overhangs the tray ({TRAY_IY + 2 * WALL:.0f} x {TRAY_IX + 2 * WALL:.0f}) a lot")
 TX, TY = TRAY_IX / 2 + WALL, TRAY_IY / 2 + WALL                # tray outer half sizes
+_y_sw = -TY + WALL + 0.4 + SW_D / 2                              # switch lever, -x wall (see base_field)
+for _px, _py in SCREW_XY:
+    _gap = abs(_px) - (SCREW_D / 2 + 2.2) - TX                   # boss to tray wall, along x
+    if _gap < 4.0 and abs(_py - _y_sw) < SCREW_D / 2 + 2.2 + 4.0:
+        print(f"note: the screw boss at ({_px}, {_py}) leaves only {_gap:.1f} mm in front of the switch lever")
 HALF_L = SENSOR_DISTANCE / 2 + PX / 2 + WALL + 2.4              # half length: just past the pockets
-CH_HY = (STRAP_WIDTH + 1) / 2                                   # strap channel half width
-END_HY = max(CH_HY + 2.4, PY / 2 + WALL + 2.0)                  # half width at the ends
+CH_HY = (STRAP_WIDTH + 1) / 2                                   # strap channel half width: 5 mm wide, a short bridge
+END_HY = max(12.9, PY / 2 + WALL + 2.0)                         # half width at the ends (as with the earlier 20 mm strap)
 MID_HY = TY                                                     # half width at the tray
 
 if TX > SENSOR_DISTANCE / 2 - PX / 2 - WALL - 0.4:
@@ -160,7 +176,10 @@ def outline(x, y):
     hy = np.where(ax > x0, END_HY, hy)
     u = np.clip((ax - x0) / (HALF_L - x0), 0, 1)                    # quarter superellipse to the tip
     hy = hy * (1 - u ** 4) ** 0.25
-    return np.maximum(np.abs(y) - hy, ax - HALF_L)
+    o = np.maximum(np.abs(y) - hy, ax - HALF_L)
+    for px, py in SCREW_XY:                              # rounded lobes around the screws
+        o = smin(o, np.hypot(x - px, y - py) - (HEAD_D / 2 + 1.6), 4.0)
+    return o
 
 
 def arch_top(x):
@@ -219,6 +238,10 @@ def base_field(rng):
     for s in (-1, 1):
         keep = smin(keep, rrect(X - s * SENSOR_DISTANCE / 2, Y, 5.0, 1.8, 1.0), 0.6)   # arrow strip
     keep = smin(keep, rrect(X, Y + TY + HOLDER_D / 2, MB_W / 2 + 4.0, HOLDER_D / 2 + 2.5, 1.5), 0.6)
+    SB = np.full_like(X, 1e3)                        # screw bosses
+    for px, py in SCREW_XY:
+        keep = smin(keep, np.hypot(X - px, Y - py) - (SCREW_D / 2 + 2.6), 0.6)
+        SB = np.minimum(SB, np.hypot(X - px, Y - py) - (SCREW_D / 2 + 2.2))
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     top = PLATE + TRAY_H
     on_xwall = (np.abs(X) > TX - WALL - 0.1) & (np.abs(Y) < TY - 4.5)
@@ -229,6 +252,8 @@ def base_field(rng):
         st = rounded_and(stops + 0.5, (z - (PLATE + STOP_H)) + 0.5, 0.5)
         d = smin(plate, tray, 2.5)
         d = smin(d, st, 0.8)
+        boss = rounded_and(SB + 0.8, (z - BOSS_TOP) + 0.8, 0.8)
+        d = smin(d, boss, 1.5)
         d = np.maximum(d, -z)                                     # flat bottom
         # Tray cavity from the plate up.
         cav = np.maximum(Ti, PLATE - z) if z > PLATE - 0.01 else np.full_like(X, 1e3)
@@ -250,7 +275,8 @@ def base_field(rng):
         shelf = rounded_and(rrect(X, Y - (y_out + yw) / 2 - 0.5, ex + 1.6, (yw - y_out) / 2 + 0.5, 1.2) + 1.0, (z - PLATE) + 1.0, 1.0)
         posts = np.minimum(*(rrect(X - sx * (ex - 1.2 + post_hx / 2), Y - (y_out + yw) / 2 - 0.3, post_hx / 2, (yw - y_out) / 2 + 0.3, 0.7) for sx in (-1, 1)))
         posts = rounded_and(posts + 0.6, (z - top) + 0.6, 0.6)
-        d = smin(d, np.maximum(smin(shelf, posts, 1.0), -z), 1.2)
+        d = smin(d, smin(shelf, posts, 1.0), 1.2)
+        d = np.maximum(d, -z)                                     # flat bottom again: the blend must not bulge below the bed
         groove_mb = np.maximum(np.maximum(np.abs(X) - ex, np.maximum(Y - y_slot1, y_slot0 - Y)), MOTOR_FLOOR - z)
         d = np.maximum(d, -groove_mb)
         # Notch at the top of the wrist-side wall for the motor wires.
@@ -266,6 +292,7 @@ def base_field(rng):
         # Lattice holes through the plate.
         if z < PLATE + 1.0:
             d = np.maximum(d, keep)                  # keep > 0 inside a cell: an opening
+
         # Voronoi relief, 0.6 mm deep, on the outside of the tray walls.
         if PLATE + 1.4 < z < top - 1.4:
             near_out = (T > -0.6) & (T < 0.3)
@@ -293,16 +320,24 @@ def saddle_field(rng):
     rim = O + 2.4                                    # > 0 within 2.4 mm of the edge: the solid rim
     walls = np.abs(np.abs(Y) - CH_HY - 1.2) - 1.2   # solid strips along both sides of the channel (glue lines)
     lattice = smin(smin(bars, -rim, 0.8), walls, 0.8)
-    lattice = np.maximum(lattice, O)                 # stay inside the outline
+    RS = np.full_like(X, 1e3)                        # distance to the nearest screw axis
+    for px, py in SCREW_XY:
+        lattice = smin(lattice, np.hypot(X - px, Y - py) - (HEAD_D / 2 + 1.4), 0.6)   # solid around each screw
+        RS = np.minimum(RS, np.hypot(X - px, Y - py))
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     for k, z in enumerate(zs):
-        d = rounded_and(lattice + 0.6, (z - Z_TOP) + 0.6, 0.6)   # rounded skin-side edges of the bars
+        lat = np.maximum(lattice, O)                             # stay inside the outline
+        d = rounded_and(lat + 0.6, (z - Z_TOP) + 0.6, 0.6)       # rounded skin-side edges of the bars
         outer = rounded_and(O + 2.0, (z - Z_TOP) + 2.0, 2.0)    # rounded outer skin-side edge
         d = np.maximum(d, outer)
         d = np.maximum(d, -z)                                     # flat face on the bed
-        # Strap channel in the flat face, the full length: the band runs between saddle and base.
+        # Strap channel in the flat face, the full length: the strap runs between saddle and base.
+        # Its roof is a 5 mm bridge, short enough to print without supports.
         ch = np.maximum(np.abs(Y) - CH_HY, z - STRAP_THICK)
         d = np.maximum(d, -ch)
+        d = np.maximum(d, -(RS - (SCREW_D / 2 + 0.35)))          # clearance hole
+        cb = np.maximum(RS - (HEAD_D / 2 + 0.3), head_floor() - z)
+        d = np.maximum(d, -cb)                                    # counterbore: the head sits flush
         field[:, :, k] = d
     return field, (xs, ys, zs), r
 
@@ -330,6 +365,71 @@ def mesh(field, axes, path, target_faces=180_000):
     t.fix_normals()
     t.export(path)
     return t
+
+
+def thread(r_major, depth, pitch, length, clearance=0.0, segments=96):
+    """A threaded rod as a real helix: a cross-section r(angle) extruded with a twist of one turn per
+    pitch. 45-degree flanks, small flats at crest and root."""
+    from manifold3d import Manifold, CrossSection
+    t = np.linspace(0, 1, segments, endpoint=False)
+    u = t                                                 # position within the pitch at z = 0
+    flank = depth / pitch                                 # 45 degrees: flank length along z = depth
+    c = np.abs(u - 0.5)
+    f = np.clip((0.5 - c - 0.05) / flank, 0, 1)            # 0 at the root, 1 at the crest
+    r = r_major - depth + clearance + depth * f
+    pts = np.c_[r * np.cos(2 * np.pi * t), r * np.sin(2 * np.pi * t)]
+    turns = length / pitch
+    return Manifold.extrude(CrossSection([pts.tolist()]), length, int(turns * segments / 2) + 1, -360.0 * turns)
+
+
+def to_trimesh(m):
+    import trimesh
+    mesh = m.to_mesh()
+    return trimesh.Trimesh(np.asarray(mesh.vert_properties)[:, :3], np.asarray(mesh.tri_verts))
+
+
+def to_manifold(t):
+    from manifold3d import Manifold, Mesh
+    return Manifold(Mesh(vert_properties=np.asarray(t.vertices, dtype=np.float32), tri_verts=np.asarray(t.faces, dtype=np.uint32)))
+
+
+def head_floor():
+    """Flat floor of the head pocket. The skin is curved and lowest at the pocket's inner edge, so
+    the head sinks until its top is 0.2 mm under that edge: never proud, and it cannot rock."""
+    x_in = abs(SCREW_XY[0][0]) - (HEAD_D / 2 + 0.3)
+    zt, _ = arch_top(np.array([x_in]))
+    return float(zt[0]) + STRAP_THICK - HEAD_H - 0.2
+
+
+def screw_length():
+    zt, _ = arch_top(np.array([abs(SCREW_XY[0][0])]))
+    saddle = float(zt[0]) + STRAP_THICK                    # saddle thickness at the screws
+    return head_floor() + BOSS_TOP - 0.6, saddle   # stops 0.6 mm short of the boss top
+
+
+def build_screws():
+    """Four screws, printed standing on their heads (slot on the bed face: a 1.6 mm bridge)."""
+    from manifold3d import Manifold
+    L, _ = screw_length()
+    head = Manifold.cylinder(HEAD_H, HEAD_D / 2, HEAD_D / 2, 96)
+    slot = Manifold.cube([HEAD_D + 2, SLOT_W, SLOT_DEPTH]).translate([-(HEAD_D + 2) / 2, -SLOT_W / 2, -0.01])
+    rod = thread(SCREW_D / 2, SCREW_DEPTH, SCREW_P, L).translate([0, 0, HEAD_H - 0.01])
+    tip = Manifold.cylinder(1.0, SCREW_D / 2, SCREW_D / 2 - SCREW_DEPTH - 0.2, 96).translate([0, 0, HEAD_H + L - 1.0])
+    cut = Manifold.cylinder(1.0, SCREW_D, SCREW_D, 8).translate([0, 0, HEAD_H + L - 1.0]) - tip   # chamfer the tip
+    one = head - slot + rod - cut
+    gap = HEAD_D + 3
+    return (one + one.translate([gap, 0, 0]) + one.translate([0, gap, 0]) + one.translate([gap, gap, 0])), L
+
+
+def tap_base(t):
+    """Cuts the threads into the bosses of the base."""
+    from manifold3d import Manifold
+    m = to_manifold(t)
+    for px, py in SCREW_XY:
+        rod = thread(SCREW_D / 2, SCREW_DEPTH, SCREW_P, BOSS_TOP + 2, THREAD_CLEAR).translate([px, py, -1])
+        lead = Manifold.cylinder(1.2, SCREW_D / 2 + 0.6, SCREW_D / 2 - SCREW_DEPTH, 96).translate([px, py, -0.01])   # entry chamfer
+        m = m - rod - lead
+    return to_trimesh(m)
 
 
 def preview(t, path, views, title=""):
@@ -366,6 +466,14 @@ if __name__ == "__main__":
     ts = mesh(fs, as_, out_dir / "capsule_saddle.stl")
     e = ts.bounds[1] - ts.bounds[0]
     print(f"capsule_saddle.stl: {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, {len(ts.faces)} faces, watertight={ts.is_watertight}, hand arc radius {r:.0f} mm")
+    tb = tap_base(tb)
+    tb.export(out_dir / "capsule_base.stl")
+    print(f"  threads cut: base watertight={tb.is_watertight}")
+    sm, L = build_screws()
+    tsc = to_trimesh(sm)
+    tsc.export(out_dir / "capsule_screws.stl")
+    e = tsc.bounds[1] - tsc.bounds[0]
+    print(f"capsule_screws.stl: 4 screws M{SCREW_D:g} x {SCREW_P} pitch, thread {L:.1f} mm, set {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, watertight={tsc.is_watertight}")
     # For looking at, not for printing: the saddle turned arc-down with the base on it.
     import trimesh
     h = ts.bounds[1][2]

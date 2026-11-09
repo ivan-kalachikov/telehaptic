@@ -1,0 +1,12 @@
+{
+    "from": "User",
+    "version": "02.04.00.14",
+    "enable_support": "0",
+    "brim_type": "outer_only",
+    "name": "Telehaptic screws @Elegoo CC 0.4",
+    "inherits": "0.12mm Fine @Elegoo CC 0.4 nozzle",
+    "wall_loops": "4",
+    "sparse_infill_density": "100%",
+    "brim_width": "3",
+    "print_settings_id": "Telehaptic screws @Elegoo CC 0.4"
+}
