@@ -29,9 +29,9 @@ import numpy as np
 
 PARTS = {
     "gy271": (14.8, 13.5),         # magnetometer module, x by y as it lies in its pocket
-    "xiao": (21.0, 17.8),          # XIAO nRF52840 Sense: length (USB end to the other end), width
-    "mux": (30.5, 21.0),           # TCA9548A module: length, width
-    "battery": (40.0, 30.0, 3.0),  # Akyga LP303040 320 mAh: length, width, thickness (from the type code; measure)
+    "xiao": (23.0, 17.8),          # XIAO nRF52840 Sense: length with the USB socket (measured 22.5-23), width
+    "mux": (21.0, 21.0),           # TCA9548A module: length, width (measured)
+    "battery": (42.0, 30.0, 3.0),  # Akyga LP303040 320 mAh: length, width, thickness (measured 42 x 30)
 }
 # The multiplexer lies on the tray floor, the XIAO on it (2 mm foam tape between), long sides along
 # the fingers (y), the USB socket towards the knuckles (+y). The flat battery (3 mm) lies on top of
@@ -97,7 +97,8 @@ mx_, my_ = PARTS["mux"]
 xx_, xy_ = PARTS["xiao"]
 bl_, bw_, bh_ = PARTS["battery"]
 TRAY_IX = max(my_, xy_) + CLEAR + 2 * WIRE_SIDE
-TRAY_IY = max(mx_, xx_) + CLEAR + 2 * WIRE_END
+# Along the fingers the tray is as long as the battery, so the battery lid rests on it end to end.
+TRAY_IY = max(max(mx_, xx_) + CLEAR + 2 * WIRE_END, bl_ + 0.4 - 2 * WALL)
 TRAY_H = STACK_H
 if bw_ > TRAY_IX + 2 * WALL + 4 or bl_ > TRAY_IY + 2 * WALL + 6:
     print(f"note: the battery ({bl_:.0f} x {bw_:.0f}) overhangs the tray ({TRAY_IY + 2 * WALL:.0f} x {TRAY_IX + 2 * WALL:.0f}) a lot")
