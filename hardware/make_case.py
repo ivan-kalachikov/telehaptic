@@ -329,7 +329,7 @@ def saddle_field(rng):
         ch = np.maximum(np.abs(Y) - CH_HY, z - STRAP_THICK)
         d = np.maximum(d, -ch)
         d = np.maximum(d, -(RS - (SCREW_D / 2 + 0.35)))          # clearance hole
-        cb = np.maximum(RS - (HEAD_D / 2 + 0.3), (Z_TOP - HEAD_H - 0.2) - z)
+        cb = np.maximum(RS - (HEAD_D / 2 + 0.3), head_floor() - z)
         d = np.maximum(d, -cb)                                    # counterbore: the head sits flush
         field[:, :, k] = d
     return field, (xs, ys, zs), r
@@ -386,10 +386,18 @@ def to_manifold(t):
     return Manifold(Mesh(vert_properties=np.asarray(t.vertices, dtype=np.float32), tri_verts=np.asarray(t.faces, dtype=np.uint32)))
 
 
+def head_floor():
+    """Flat floor of the head pocket. The skin is curved and lowest at the pocket's inner edge, so
+    the head sinks until its top is 0.2 mm under that edge: never proud, and it cannot rock."""
+    x_in = abs(SCREW_XY[0][0]) - (HEAD_D / 2 + 0.3)
+    zt, _ = arch_top(np.array([x_in]))
+    return float(zt[0]) + STRAP_THICK - HEAD_H - 0.2
+
+
 def screw_length():
     zt, _ = arch_top(np.array([abs(SCREW_XY[0][0])]))
     saddle = float(zt[0]) + STRAP_THICK                    # saddle thickness at the screws
-    return saddle - HEAD_H - 0.2 + BOSS_TOP - 0.6, saddle   # stops 0.6 mm short of the boss top
+    return head_floor() + BOSS_TOP - 0.6, saddle   # stops 0.6 mm short of the boss top
 
 
 def build_screws():
