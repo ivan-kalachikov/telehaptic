@@ -31,6 +31,12 @@ WIRE_SIDE = 3.5          # room on each long side of the tray for solder joints 
                          # multiplexer and of the XIAO are along their long edges, which face these walls)
 WIRE_END = 1.5           # room at each short end of the tray
 SENSOR_DISTANCE = 53.0   # centre to centre of the two chips; enter the same number in the app
+# The back of the hand is convex across the knuckles, so a separate saddle goes under the flat base:
+# its underside is an arc that follows the hand. Measure it: hand relaxed, lay a straight ruler across
+# the back of the hand where the capsule will sit, touching the highest point; measure the gap under
+# the ruler 40 mm to the left and to the right of that point and enter the average here.
+ARCH_DROP_AT_40 = 5.0    # mm; 5 is a placeholder, not a measurement
+SADDLE_MIN = 1.6         # saddle thickness at its thinnest (the middle)
 STRAP_WIDTH = 25.0       # elastic band width; slots are made 1 mm wider
 CLEAR = 0.6              # gap around each part in its pocket (total, both sides)
 WALL = 1.6
@@ -39,6 +45,7 @@ POCKET_H = 3.0           # sensor pocket wall height above the plate
 TRAY_H = None            # tray wall height above the plate: battery + STACK_H when None
 
 out = Path(__file__).with_name("capsule_base.stl")
+out_saddle = Path(__file__).with_name("capsule_saddle.stl")
 
 
 def box(x0, y0, z0, x1, y1, z1):
@@ -67,6 +74,8 @@ def build():
     for s in (-1, 1):
         cx = s * (end - 2.5 - slot_w / 2)
         plate -= box(cx - slot_w / 2, -(STRAP_WIDTH + 1) / 2, -1, cx + slot_w / 2, (STRAP_WIDTH + 1) / 2, PLATE + 1)
+    global FOOTPRINT
+    FOOTPRINT = (end, width, slot_w, [s * (end - 2.5 - slot_w / 2) for s in (-1, 1)])
     parts = plate
     # Sensor pockets: sensor 1 at +x (index side), sensor 2 at -x. Four L-shaped corner stops hold
     # the module in place and in its orientation; the sides stay open, so the wires can leave on
@@ -98,6 +107,25 @@ def build():
     return parts
 
 
+def build_saddle():
+    """Flat on top (glued under the base), arc underneath. Returned upside down: the flat face on the
+    print bed, so the arc needs no supports."""
+    end, width, slot_w, slots = FOOTPRINT
+    d = max(ARCH_DROP_AT_40, 0.1)
+    r = (40.0 ** 2 + d ** 2) / (2 * d)                 # radius of the hand's arc from the measured drop
+    drop_end = r - (r * r - end * end) ** 0.5          # how far the hand falls away at the saddle's ends
+    h = SADDLE_MIN + drop_end
+    block = box(-end, -width / 2, 0, end, width / 2, h)
+    # Hand as a cylinder along y: its top touches the saddle's middle at height h - SADDLE_MIN... measured
+    # from the flat face. Built with the flat face at z = h (top) first, then flipped.
+    hand = Manifold.cylinder(width + 2, r, r, 256).rotate([90, 0, 0]).translate([0, (width + 2) / 2, -r + (h - SADDLE_MIN)])
+    saddle = block - hand
+    for cx in slots:
+        saddle -= box(cx - slot_w / 2, -(STRAP_WIDTH + 1) / 2, -1, cx + slot_w / 2, (STRAP_WIDTH + 1) / 2, h + 1)
+    # Flip: flat face down for printing.
+    return saddle.mirror([0, 0, 1]).translate([0, 0, h]), r, drop_end
+
+
 def _tri(x, y, s):
     from manifold3d import CrossSection
     return CrossSection([[(x, y - s / 2), (x + s, y), (x, y + s / 2)]])
@@ -116,6 +144,11 @@ if __name__ == "__main__":
     t = save(m, out)
     ext = t.bounds[1] - t.bounds[0]
     print(f"{out.name}: {ext[0]:.1f} x {ext[1]:.1f} x {ext[2]:.1f} mm, watertight={t.is_watertight}, volume {t.volume / 1000:.1f} cm3")
+    sd, r, drop_end = build_saddle()
+    ts = save(sd, out_saddle)
+    e2 = ts.bounds[1] - ts.bounds[0]
+    print(f"{out_saddle.name}: {e2[0]:.1f} x {e2[1]:.1f} x {e2[2]:.1f} mm, watertight={ts.is_watertight}; "
+          f"hand arc radius {r:.0f} mm, {drop_end:.1f} mm lower at the ends than in the middle")
     if "--show" in sys.argv:
         import matplotlib
         matplotlib.use("Agg")
