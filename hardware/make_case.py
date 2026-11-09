@@ -33,12 +33,13 @@ PARTS = {
     "mux": (30.5, 21.0),           # TCA9548A module: length, width (measured)
     "battery": (42.0, 30.0, 3.0),  # Akyga LP303040 320 mAh: length, width, thickness (measured 42 x 30)
     "motor": (21.0, 1.6),          # Grove Vibration Motor board: width (measured 21), PCB thickness
-    "switch": (8.6, 3.6, 3.5),     # slide switch body: length, depth, height (typical SS12D00 sizes; measure)
+    "switch": (11.0, 6.0, 13.0),   # slide switch: body length without the ears, body depth, lever tip to pin tips (measured)
 }
 # Motor board: stands upright in a holder on the outside of the tray wall facing the wrist (-y),
 # centred between the sensors, motor outwards; 2 mm behind it for the solder joints, its wires go
-# into the tray through a notch at the top of that wall. Switch: inside the tray at the wrist end,
-# body along y, lever out through a window in the -x wall (little finger side).
+# into the tray through a notch at the top of that wall. Switch: inside the tray in the wrist-end
+# corner, standing upright (body length along z, mounting ears cut off), against the -x wall (little
+# finger side); its lever comes out through a window in that wall and slides up and down.
 MOTOR_GAP = 2.0         # between the board and the wall, for solder joints
 MOTOR_FLOOR = 0.8       # the board stands this high above the bottom, in a groove in the plate
 SWITCH_TRAVEL = 3.0     # lever travel; the window is lever + travel + clearance long
@@ -115,6 +116,10 @@ SW_L, SW_D, SW_H = PARTS["switch"]
 PCB_SLOT = MB_T + 0.5
 LIP = 1.2
 HOLDER_D = MOTOR_GAP + PCB_SLOT + LIP           # how far the holder sticks out of the wrist-side wall
+if SW_L > TRAY_H + 0.2:
+    print(f"note: the switch ({SW_L} mm long) stands taller than the tray ({TRAY_H} mm)")
+if SW_D + 0.4 > TRAY_IY - PARTS["mux"][0]:
+    print(f"note: the switch ({SW_D} mm deep) does not fit beside the multiplexer ({TRAY_IY - PARTS['mux'][0]:.1f} mm free)")
 if bw_ > TRAY_IX + 2 * WALL + 4 or bl_ > TRAY_IY + 2 * WALL + 6:
     print(f"note: the battery ({bl_:.0f} x {bw_:.0f}) overhangs the tray ({TRAY_IY + 2 * WALL:.0f} x {TRAY_IX + 2 * WALL:.0f}) a lot")
 TX, TY = TRAY_IX / 2 + WALL, TRAY_IY / 2 + WALL                # tray outer half sizes
@@ -228,11 +233,11 @@ def base_field(rng):
         in_wwall = np.abs(Y - (-TY + WALL / 2)) - WALL
         wn = rrect(X, z - (top - 5.0 + 50.0), 4.0, 50.0, 2.0)
         d = np.maximum(d, -np.maximum(in_wwall, wn))
-        # Switch: window in the -x wall at the wrist end for the lever.
+        # Switch: vertical window in the -x wall at the wrist end for the lever.
         in_sx = np.abs(X + (TX - WALL / 2)) - WALL
-        y_sw = -TY + WALL + 0.3 + SW_L / 2             # switch centre along y
-        z_sw = PLATE + SW_H / 2
-        win = rrect(Y - y_sw, z - z_sw, (2.0 + SWITCH_TRAVEL) / 2 + 0.6, 1.6, 1.0)
+        y_sw = -TY + WALL + 0.4 + SW_D / 2             # switch centre along y
+        z_sw = PLATE + TRAY_H / 2
+        win = rrect(Y - y_sw, z - z_sw, 1.6, (2.0 + SWITCH_TRAVEL) / 2 + 0.6, 0.8)
         d = np.maximum(d, -np.maximum(in_sx, win))
         # Engravings on the top of the plate.
         if PLATE - 0.45 < z < PLATE + 0.6:
