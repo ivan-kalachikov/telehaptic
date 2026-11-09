@@ -1,0 +1,12 @@
+{
+    "from": "User",
+    "version": "02.04.00.14",
+    "enable_support": "0",
+    "brim_type": "outer_only",
+    "name": "Telehaptic case @Elegoo CC 0.4",
+    "inherits": "0.20mm Standard @Elegoo CC 0.4 nozzle",
+    "wall_loops": "3",
+    "sparse_infill_density": "20%",
+    "brim_width": "5",
+    "print_settings_id": "Telehaptic case @Elegoo CC 0.4"
+}
