@@ -32,7 +32,17 @@ PARTS = {
     "xiao": (23.0, 17.8),          # XIAO nRF52840 Sense: length with the USB socket (measured 22.5-23), width
     "mux": (30.5, 21.0),           # TCA9548A module: length, width (measured)
     "battery": (42.0, 30.0, 3.0),  # Akyga LP303040 320 mAh: length, width, thickness (measured 42 x 30)
+    "motor": (21.0, 1.6),          # Grove Vibration Motor board: width (measured 21), PCB thickness
+    "switch": (8.6, 3.6, 3.5),     # slide switch body: length, depth, height (typical SS12D00 sizes; measure)
 }
+# Motor board: stands upright in a holder on the outside of the tray wall facing the wrist (-y),
+# centred between the sensors, motor outwards; 2 mm behind it for the solder joints, its wires go
+# into the tray through a notch at the top of that wall. Switch: inside the tray at the wrist end,
+# body along y, lever out through a window in the -x wall (little finger side).
+MOTOR_GAP = 2.0         # between the board and the wall, for solder joints
+MOTOR_FLOOR = 0.8       # the board stands this high above the bottom, in a groove in the plate
+SWITCH_TRAVEL = 3.0     # lever travel; the window is lever + travel + clearance long
+
 # The multiplexer lies on the tray floor, the XIAO on it (2 mm foam tape between), long sides along
 # the fingers (y), the USB socket towards the knuckles (+y). The flat battery (3 mm) lies on top of
 # the tray like a lid: it is as wide as the tray, so the capsule stays narrow across the hand.
@@ -100,6 +110,11 @@ TRAY_IX = max(my_, xy_) + CLEAR + 2 * WIRE_SIDE
 # Along the fingers the tray is as long as the battery, so the battery lid rests on it end to end.
 TRAY_IY = max(max(mx_, xx_) + CLEAR + 2 * WIRE_END, bl_ + 0.4 - 2 * WALL)
 TRAY_H = STACK_H
+MB_W, MB_T = PARTS["motor"]
+SW_L, SW_D, SW_H = PARTS["switch"]
+PCB_SLOT = MB_T + 0.5
+LIP = 1.2
+HOLDER_D = MOTOR_GAP + PCB_SLOT + LIP           # how far the holder sticks out of the wrist-side wall
 if bw_ > TRAY_IX + 2 * WALL + 4 or bl_ > TRAY_IY + 2 * WALL + 6:
     print(f"note: the battery ({bl_:.0f} x {bw_:.0f}) overhangs the tray ({TRAY_IY + 2 * WALL:.0f} x {TRAY_IX + 2 * WALL:.0f}) a lot")
 TX, TY = TRAY_IX / 2 + WALL, TRAY_IY / 2 + WALL                # tray outer half sizes
@@ -139,7 +154,7 @@ def grid(zmax):
     # (that makes marching cubes emit degenerate triangles).
     o = RES * 0.37
     xs = np.arange(-HALF_L - pad, HALF_L + pad, RES) + o
-    ys = np.arange(-MID_HY - pad, MID_HY + pad, RES) + o
+    ys = np.arange(-MID_HY - pad - HOLDER_D, MID_HY + pad, RES) + o
     zs = np.arange(-pad, zmax + pad, RES) + o
     return xs, ys, zs
 
@@ -197,6 +212,28 @@ def base_field(rng):
         in_ywall = np.abs(Y - (TY - WALL / 2)) - WALL
         uu = rrect(X, z - (top - 8.0 + 50.0), 6.5, 50.0, 3.0)
         d = np.maximum(d, -np.maximum(in_ywall, uu))
+        # Motor holder: a shelf under it and two posts with grooves for the board's edges.
+        yw = -TY                                       # outer face of the wrist-side wall
+        y_slot0, y_slot1 = yw - MOTOR_GAP - PCB_SLOT, yw - MOTOR_GAP
+        y_out = y_slot0 - LIP
+        ex = MB_W / 2 + 0.3                            # board edge (with clearance)
+        post_hx = 1.6 + 1.2                            # post: 1.2 mm engaged + 1.6 mm outside the edge
+        shelf = rounded_and(rrect(X, Y - (y_out + yw) / 2 - 0.5, ex + 1.6, (yw - y_out) / 2 + 0.5, 1.2) + 1.0, (z - PLATE) + 1.0, 1.0)
+        posts = np.minimum(*(rrect(X - sx * (ex - 1.2 + post_hx / 2), Y - (y_out + yw) / 2 - 0.3, post_hx / 2, (yw - y_out) / 2 + 0.3, 0.7) for sx in (-1, 1)))
+        posts = rounded_and(posts + 0.6, (z - top) + 0.6, 0.6)
+        d = smin(d, np.maximum(smin(shelf, posts, 1.0), -z), 1.2)
+        groove_mb = np.maximum(np.maximum(np.abs(X) - ex, np.maximum(Y - y_slot1, y_slot0 - Y)), MOTOR_FLOOR - z)
+        d = np.maximum(d, -groove_mb)
+        # Notch at the top of the wrist-side wall for the motor wires.
+        in_wwall = np.abs(Y - (-TY + WALL / 2)) - WALL
+        wn = rrect(X, z - (top - 5.0 + 50.0), 4.0, 50.0, 2.0)
+        d = np.maximum(d, -np.maximum(in_wwall, wn))
+        # Switch: window in the -x wall at the wrist end for the lever.
+        in_sx = np.abs(X + (TX - WALL / 2)) - WALL
+        y_sw = -TY + WALL + 0.3 + SW_L / 2             # switch centre along y
+        z_sw = PLATE + SW_H / 2
+        win = rrect(Y - y_sw, z - z_sw, (2.0 + SWITCH_TRAVEL) / 2 + 0.6, 1.6, 1.0)
+        d = np.maximum(d, -np.maximum(in_sx, win))
         # Engravings on the top of the plate.
         if PLATE - 0.45 < z < PLATE + 0.6:
             d = np.where(groove & (O < -0.1), np.maximum(d, (PLATE - 0.45) - z), d)
