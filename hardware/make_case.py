@@ -31,11 +31,12 @@ PARTS = {
     "gy271": (14.8, 13.5),         # magnetometer module, x by y as it lies in its pocket
     "xiao": (21.0, 17.8),          # XIAO nRF52840 Sense: length (USB end to the other end), width
     "mux": (30.5, 21.0),           # TCA9548A module: length, width
-    "battery": (30.0, 20.0, 6.0),  # LiPo 320 mAh: length, width, thickness
+    "battery": (40.0, 30.0, 3.0),  # Akyga LP303040 320 mAh: length, width, thickness (from the type code; measure)
 }
-# In the tray the parts lie in a stack, long side along the fingers (y): battery at the bottom,
-# the multiplexer on it, the XIAO on top with its USB socket towards the knuckles (+y).
-STACK_H = 13.0          # what the multiplexer and the XIAO add above the battery, with 2 mm foam tape
+# The multiplexer lies on the tray floor, the XIAO on it (2 mm foam tape between), long sides along
+# the fingers (y), the USB socket towards the knuckles (+y). The flat battery (3 mm) lies on top of
+# the tray like a lid: it is as wide as the tray, so the capsule stays narrow across the hand.
+STACK_H = 11.0          # tray height: multiplexer + foam + XIAO with its USB socket, and the wires
 WIRE_SIDE = 2.75        # room on each long side of the tray for solder joints and bent wires
 WIRE_END = 1.5          # room at each short end of the tray
 SENSOR_DISTANCE = 50.0  # centre to centre of the two chips; enter the same number in the app
@@ -95,9 +96,11 @@ PX, PY = gx_ + CLEAR, gy_ + CLEAR
 mx_, my_ = PARTS["mux"]
 xx_, xy_ = PARTS["xiao"]
 bl_, bw_, bh_ = PARTS["battery"]
-TRAY_IX = max(my_, xy_, bw_) + CLEAR + 2 * WIRE_SIDE
-TRAY_IY = max(mx_, xx_, bl_) + CLEAR + 2 * WIRE_END
-TRAY_H = bh_ + STACK_H
+TRAY_IX = max(my_, xy_) + CLEAR + 2 * WIRE_SIDE
+TRAY_IY = max(mx_, xx_) + CLEAR + 2 * WIRE_END
+TRAY_H = STACK_H
+if bw_ > TRAY_IX + 2 * WALL + 4 or bl_ > TRAY_IY + 2 * WALL + 6:
+    print(f"note: the battery ({bl_:.0f} x {bw_:.0f}) overhangs the tray ({TRAY_IY + 2 * WALL:.0f} x {TRAY_IX + 2 * WALL:.0f}) a lot")
 TX, TY = TRAY_IX / 2 + WALL, TRAY_IY / 2 + WALL                # tray outer half sizes
 HALF_L = SENSOR_DISTANCE / 2 + PX / 2 + WALL + 2.4              # half length: just past the pockets
 CH_HY = (STRAP_WIDTH + 1) / 2                                   # strap channel half width
