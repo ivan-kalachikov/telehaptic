@@ -56,7 +56,7 @@ STRAP_THICK = 1.6       # channel depth (an elastic band is about 1-1.5 mm thick
 # The two parts are held by four printed screws with a cylindrical slotted head (flat screwdriver):
 # from the skin side through the saddle into a threaded boss of the base; the head sits flush in a
 # counterbore of the saddle. Coarse 45-degree thread so it prints without supports.
-SCREW_XY = [(sx * 18.5, sy * 16.5) for sx in (-1, 1) for sy in (-1, 1)]   # beside the pockets, clear of the tray and the strap channel
+SCREW_XY = [(sx * 25.0, sy * 16.5) for sx in (-1, 1) for sy in (-1, 1)]   # beside the sensor pockets: clear of the tray, its switch lever and the strap channel
 SCREW_D = 6.0           # thread major diameter
 SCREW_P = 1.5           # pitch
 SCREW_DEPTH = 0.65      # thread depth (45-degree flanks)
@@ -152,6 +152,11 @@ if SW_D + 0.4 > TRAY_IY - PARTS["mux"][0]:
 if bw_ > TRAY_IX + 2 * WALL + 4 or bl_ > TRAY_IY + 2 * WALL + 6:
     print(f"note: the battery ({bl_:.0f} x {bw_:.0f}) overhangs the tray ({TRAY_IY + 2 * WALL:.0f} x {TRAY_IX + 2 * WALL:.0f}) a lot")
 TX, TY = TRAY_IX / 2 + WALL, TRAY_IY / 2 + WALL                # tray outer half sizes
+_y_sw = -TY + WALL + 0.4 + SW_D / 2                              # switch lever, -x wall (see base_field)
+for _px, _py in SCREW_XY:
+    _gap = abs(_px) - (SCREW_D / 2 + 2.2) - TX                   # boss to tray wall, along x
+    if _gap < 4.0 and abs(_py - _y_sw) < SCREW_D / 2 + 2.2 + 4.0:
+        print(f"note: the screw boss at ({_px}, {_py}) leaves only {_gap:.1f} mm in front of the switch lever")
 HALF_L = SENSOR_DISTANCE / 2 + PX / 2 + WALL + 2.4              # half length: just past the pockets
 CH_HY = (STRAP_WIDTH + 1) / 2                                   # strap channel half width
 END_HY = max(CH_HY + 2.4, PY / 2 + WALL + 2.0)                  # half width at the ends
