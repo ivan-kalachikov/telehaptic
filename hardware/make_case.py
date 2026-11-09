@@ -30,7 +30,7 @@ import numpy as np
 PARTS = {
     "gy271": (14.8, 13.5),         # magnetometer module, x by y as it lies in its pocket
     "xiao": (23.0, 17.8),          # XIAO nRF52840 Sense: length with the USB socket (measured 22.5-23), width
-    "mux": (21.0, 21.0),           # TCA9548A module: length, width (measured)
+    "mux": (30.5, 21.0),           # TCA9548A module: length, width (measured)
     "battery": (42.0, 30.0, 3.0),  # Akyga LP303040 320 mAh: length, width, thickness (measured 42 x 30)
 }
 # The multiplexer lies on the tray floor, the XIAO on it (2 mm foam tape between), long sides along
