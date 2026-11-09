@@ -51,7 +51,7 @@ STACK_H = 11.0          # tray height: multiplexer + foam + XIAO with its USB so
 WIRE_SIDE = 2.75        # room on each long side of the tray for solder joints and bent wires
 WIRE_END = 1.5          # room at each short end of the tray
 SENSOR_DISTANCE = 50.0  # centre to centre of the two chips; enter the same number in the app
-STRAP_WIDTH = 20.0      # elastic band width: it runs in a channel between the base and the saddle
+STRAP_WIDTH = 4.0       # strap width: it runs in a channel between the base and the saddle
 STRAP_THICK = 1.6       # channel depth (an elastic band is about 1-1.5 mm thick)
 # The two parts are held by four printed screws with a cylindrical slotted head (flat screwdriver):
 # from the skin side through the saddle into a threaded boss of the base; the head sits flush in a
@@ -68,7 +68,6 @@ BOSS_TOP = 8.0          # top of the threaded boss above the base bottom
 # sits, touching the highest point; the gap under the ruler 40 mm left and right of that point.
 ARCH_DROP_AT_40 = 5.0   # mm; 5 is a placeholder, not a measurement
 SADDLE_MIN = 1.6        # saddle thickness in the middle, under the strap channel
-ROOF = 0.8              # solid strap-channel roof in the saddle (4 layers at 0.2 mm), bridged in one piece
 
 CLEAR = 0.6             # gap around each part in its pocket (total)
 WALL = 1.6
@@ -159,8 +158,8 @@ for _px, _py in SCREW_XY:
     if _gap < 4.0 and abs(_py - _y_sw) < SCREW_D / 2 + 2.2 + 4.0:
         print(f"note: the screw boss at ({_px}, {_py}) leaves only {_gap:.1f} mm in front of the switch lever")
 HALF_L = SENSOR_DISTANCE / 2 + PX / 2 + WALL + 2.4              # half length: just past the pockets
-CH_HY = (STRAP_WIDTH + 1) / 2                                   # strap channel half width
-END_HY = max(CH_HY + 2.4, PY / 2 + WALL + 2.0)                  # half width at the ends
+CH_HY = (STRAP_WIDTH + 1) / 2                                   # strap channel half width: 5 mm wide, a short bridge
+END_HY = max(12.9, PY / 2 + WALL + 2.0)                         # half width at the ends (as with the earlier 20 mm strap)
 MID_HY = TY                                                     # half width at the tray
 
 if TX > SENSOR_DISTANCE / 2 - PX / 2 - WALL - 0.4:
@@ -325,18 +324,15 @@ def saddle_field(rng):
     for px, py in SCREW_XY:
         lattice = smin(lattice, np.hypot(X - px, Y - py) - (HEAD_D / 2 + 1.4), 0.6)   # solid around each screw
         RS = np.minimum(RS, np.hypot(X - px, Y - py))
-    band = np.abs(Y) - (CH_HY + 2.4)                 # over the strap channel and its side strips
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     for k, z in enumerate(zs):
-        # The channel roof is solid for ROOF mm: a plain bridge across the channel. The lattice
-        # holes start above it, so no bar hangs in the air over the channel while printing.
-        roof = np.maximum(band, z - (STRAP_THICK + ROOF))
-        lat = np.maximum(np.minimum(lattice, roof), O)          # stay inside the outline
+        lat = np.maximum(lattice, O)                             # stay inside the outline
         d = rounded_and(lat + 0.6, (z - Z_TOP) + 0.6, 0.6)       # rounded skin-side edges of the bars
         outer = rounded_and(O + 2.0, (z - Z_TOP) + 2.0, 2.0)    # rounded outer skin-side edge
         d = np.maximum(d, outer)
         d = np.maximum(d, -z)                                     # flat face on the bed
-        # Strap channel in the flat face, the full length: the band runs between saddle and base.
+        # Strap channel in the flat face, the full length: the strap runs between saddle and base.
+        # Its roof is a 5 mm bridge, short enough to print without supports.
         ch = np.maximum(np.abs(Y) - CH_HY, z - STRAP_THICK)
         d = np.maximum(d, -ch)
         d = np.maximum(d, -(RS - (SCREW_D / 2 + 0.35)))          # clearance hole
