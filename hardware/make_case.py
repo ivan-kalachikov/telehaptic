@@ -53,15 +53,17 @@ WIRE_END = 1.5          # room at each short end of the tray
 SENSOR_DISTANCE = 50.0  # centre to centre of the two chips; enter the same number in the app
 STRAP_WIDTH = 20.0      # elastic band width: it runs in a channel between the base and the saddle
 STRAP_THICK = 1.6       # channel depth (an elastic band is about 1-1.5 mm thick)
-# The two parts are held by four printed snap pins instead of glue: square shank through both parts
-# from the skin side, head sunk into the saddle, split barbed tip snapping over the base plate.
-# Squeeze the tip with tweezers to take them out.
-PIN_XY = [(sx * 17.5, sy * 12.5) for sx in (-1, 1) for sy in (-1, 1)]   # outside the tray, beside the pockets, clear of the strap channel
-PIN_W = 2.8             # square shank
-PIN_HOLE = 3.0          # square hole in both parts
-PIN_HEAD = (6.0, 1.2)   # head bar length, thickness (sunk into the saddle)
-PIN_BARB = 0.35         # how far each barb sticks out
-PIN_SLOT = 0.9          # slot between the two prongs
+# The two parts are held by four printed screws with a cylindrical slotted head (flat screwdriver):
+# from the skin side through the saddle into a threaded boss of the base; the head sits flush in a
+# counterbore of the saddle. Coarse 45-degree thread so it prints without supports.
+SCREW_XY = [(sx * 18.5, sy * 16.5) for sx in (-1, 1) for sy in (-1, 1)]   # beside the pockets, clear of the tray and the strap channel
+SCREW_D = 6.0           # thread major diameter
+SCREW_P = 1.5           # pitch
+SCREW_DEPTH = 0.65      # thread depth (45-degree flanks)
+THREAD_CLEAR = 0.2      # radial clearance of the thread in the base
+HEAD_D, HEAD_H = 9.5, 2.2   # cylindrical head
+SLOT_W, SLOT_DEPTH = 1.6, 1.1
+BOSS_TOP = 8.0          # top of the threaded boss above the base bottom
 # Back of the hand: hand relaxed, a straight ruler across the back of the hand where the capsule
 # sits, touching the highest point; the gap under the ruler 40 mm left and right of that point.
 ARCH_DROP_AT_40 = 5.0   # mm; 5 is a placeholder, not a measurement
@@ -169,7 +171,10 @@ def outline(x, y):
     hy = np.where(ax > x0, END_HY, hy)
     u = np.clip((ax - x0) / (HALF_L - x0), 0, 1)                    # quarter superellipse to the tip
     hy = hy * (1 - u ** 4) ** 0.25
-    return np.maximum(np.abs(y) - hy, ax - HALF_L)
+    o = np.maximum(np.abs(y) - hy, ax - HALF_L)
+    for px, py in SCREW_XY:                              # rounded lobes around the screws
+        o = smin(o, np.hypot(x - px, y - py) - (HEAD_D / 2 + 1.6), 4.0)
+    return o
 
 
 def arch_top(x):
@@ -228,10 +233,10 @@ def base_field(rng):
     for s in (-1, 1):
         keep = smin(keep, rrect(X - s * SENSOR_DISTANCE / 2, Y, 5.0, 1.8, 1.0), 0.6)   # arrow strip
     keep = smin(keep, rrect(X, Y + TY + HOLDER_D / 2, MB_W / 2 + 4.0, HOLDER_D / 2 + 2.5, 1.5), 0.6)
-    PH = np.full_like(X, 1e3)                        # snap pin holes
-    for px, py in PIN_XY:
-        keep = smin(keep, np.hypot(X - px, Y - py) - 3.4, 0.6)      # solid boss around each pin
-        PH = np.minimum(PH, rrect(X - px, Y - py, PIN_HOLE / 2, PIN_HOLE / 2, 0.3))
+    SB = np.full_like(X, 1e3)                        # screw bosses
+    for px, py in SCREW_XY:
+        keep = smin(keep, np.hypot(X - px, Y - py) - (SCREW_D / 2 + 2.6), 0.6)
+        SB = np.minimum(SB, np.hypot(X - px, Y - py) - (SCREW_D / 2 + 2.2))
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     top = PLATE + TRAY_H
     on_xwall = (np.abs(X) > TX - WALL - 0.1) & (np.abs(Y) < TY - 4.5)
@@ -242,6 +247,8 @@ def base_field(rng):
         st = rounded_and(stops + 0.5, (z - (PLATE + STOP_H)) + 0.5, 0.5)
         d = smin(plate, tray, 2.5)
         d = smin(d, st, 0.8)
+        boss = rounded_and(SB + 0.8, (z - BOSS_TOP) + 0.8, 0.8)
+        d = smin(d, boss, 1.5)
         d = np.maximum(d, -z)                                     # flat bottom
         # Tray cavity from the plate up.
         cav = np.maximum(Ti, PLATE - z) if z > PLATE - 0.01 else np.full_like(X, 1e3)
@@ -279,7 +286,7 @@ def base_field(rng):
         # Lattice holes through the plate.
         if z < PLATE + 1.0:
             d = np.maximum(d, keep)                  # keep > 0 inside a cell: an opening
-            d = np.maximum(d, -PH)                   # snap pin holes through the plate
+
         # Voronoi relief, 0.6 mm deep, on the outside of the tray walls.
         if PLATE + 1.4 < z < top - 1.4:
             near_out = (T > -0.6) & (T < 0.3)
@@ -307,12 +314,10 @@ def saddle_field(rng):
     rim = O + 2.4                                    # > 0 within 2.4 mm of the edge: the solid rim
     walls = np.abs(np.abs(Y) - CH_HY - 1.2) - 1.2   # solid strips along both sides of the channel (glue lines)
     lattice = smin(smin(bars, -rim, 0.8), walls, 0.8)
-    PH = np.full_like(X, 1e3)
-    HEAD = np.full_like(X, 1e3)
-    for px, py in PIN_XY:
-        lattice = smin(lattice, np.hypot(X - px, Y - py) - 3.8, 0.6)   # solid boss around each pin
-        PH = np.minimum(PH, rrect(X - px, Y - py, PIN_HOLE / 2, PIN_HOLE / 2, 0.3))
-        HEAD = np.minimum(HEAD, rrect(X - px, Y - py, (PIN_HEAD[0] + 0.4) / 2, (PIN_W + 0.4) / 2, 0.4))
+    RS = np.full_like(X, 1e3)                        # distance to the nearest screw axis
+    for px, py in SCREW_XY:
+        lattice = smin(lattice, np.hypot(X - px, Y - py) - (HEAD_D / 2 + 1.4), 0.6)   # solid around each screw
+        RS = np.minimum(RS, np.hypot(X - px, Y - py))
     lattice = np.maximum(lattice, O)                 # stay inside the outline
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     for k, z in enumerate(zs):
@@ -323,8 +328,9 @@ def saddle_field(rng):
         # Strap channel in the flat face, the full length: the band runs between saddle and base.
         ch = np.maximum(np.abs(Y) - CH_HY, z - STRAP_THICK)
         d = np.maximum(d, -ch)
-        d = np.maximum(d, -PH)                                    # snap pin holes
-        d = np.maximum(d, -np.maximum(HEAD, (Z_TOP - PIN_HEAD[1] - 0.2) - z))   # head sunk on the skin side
+        d = np.maximum(d, -(RS - (SCREW_D / 2 + 0.35)))          # clearance hole
+        cb = np.maximum(RS - (HEAD_D / 2 + 0.3), (Z_TOP - HEAD_H - 0.2) - z)
+        d = np.maximum(d, -cb)                                    # counterbore: the head sits flush
         field[:, :, k] = d
     return field, (xs, ys, zs), r
 
@@ -354,27 +360,61 @@ def mesh(field, axes, path, target_faces=180_000):
     return t
 
 
-def build_pins():
-    """Four snap pins, printed lying on their side (flat face on the bed, no supports)."""
+def thread(r_major, depth, pitch, length, clearance=0.0, segments=96):
+    """A threaded rod as a real helix: a cross-section r(angle) extruded with a twist of one turn per
+    pitch. 45-degree flanks, small flats at crest and root."""
     from manifold3d import Manifold, CrossSection
+    t = np.linspace(0, 1, segments, endpoint=False)
+    u = t                                                 # position within the pitch at z = 0
+    flank = depth / pitch                                 # 45 degrees: flank length along z = depth
+    c = np.abs(u - 0.5)
+    f = np.clip((0.5 - c - 0.05) / flank, 0, 1)            # 0 at the root, 1 at the crest
+    r = r_major - depth + clearance + depth * f
+    pts = np.c_[r * np.cos(2 * np.pi * t), r * np.sin(2 * np.pi * t)]
+    turns = length / pitch
+    return Manifold.extrude(CrossSection([pts.tolist()]), length, int(turns * segments / 2) + 1, -360.0 * turns)
+
+
+def to_trimesh(m):
     import trimesh
-    # Grip: saddle thickness at the pins (less the sunk head) + the base plate.
-    zt, _ = arch_top(np.array([abs(PIN_XY[0][0])]))
-    grip = float(zt[0]) + STRAP_THICK - PIN_HEAD[1] - 0.2 + PLATE
-    hw, hl = PIN_W / 2, PIN_HEAD[0] / 2
-    tip = 2.2
-    # Outline in the bed plane: x along the pin, y across; extruded PIN_W high.
-    head = [(0, -hl), (PIN_HEAD[1], -hl), (PIN_HEAD[1], hl), (0, hl)]
-    x0, x1 = PIN_HEAD[1], PIN_HEAD[1] + grip + 0.15                 # barb catches just past the plate
-    shank = [(x0 - 0.01, -hw), (x1, -hw), (x1, -hw - PIN_BARB), (x1 + tip, -hw * 0.45),
-             (x1 + tip, hw * 0.45), (x1, hw + PIN_BARB), (x1, hw), (x0 - 0.01, hw)]
-    prof = CrossSection([head]) + CrossSection([shank])
-    slot = CrossSection([[(x1 - 4.5, -PIN_SLOT / 2), (x1 + tip + 1, -PIN_SLOT / 2), (x1 + tip + 1, PIN_SLOT / 2), (x1 - 4.5, PIN_SLOT / 2)]])
-    pin = Manifold.extrude(prof - slot, PIN_W)
-    pins = [pin.translate([0, k * (PIN_HEAD[0] + 3), 0]) for k in range(4)]
-    m = pins[0] + pins[1] + pins[2] + pins[3]
     mesh = m.to_mesh()
-    return trimesh.Trimesh(np.asarray(mesh.vert_properties)[:, :3], np.asarray(mesh.tri_verts)), grip
+    return trimesh.Trimesh(np.asarray(mesh.vert_properties)[:, :3], np.asarray(mesh.tri_verts))
+
+
+def to_manifold(t):
+    from manifold3d import Manifold, Mesh
+    return Manifold(Mesh(vert_properties=np.asarray(t.vertices, dtype=np.float32), tri_verts=np.asarray(t.faces, dtype=np.uint32)))
+
+
+def screw_length():
+    zt, _ = arch_top(np.array([abs(SCREW_XY[0][0])]))
+    saddle = float(zt[0]) + STRAP_THICK                    # saddle thickness at the screws
+    return saddle - HEAD_H - 0.2 + BOSS_TOP - 0.6, saddle   # stops 0.6 mm short of the boss top
+
+
+def build_screws():
+    """Four screws, printed standing on their heads (slot on the bed face: a 1.6 mm bridge)."""
+    from manifold3d import Manifold
+    L, _ = screw_length()
+    head = Manifold.cylinder(HEAD_H, HEAD_D / 2, HEAD_D / 2, 96)
+    slot = Manifold.cube([HEAD_D + 2, SLOT_W, SLOT_DEPTH]).translate([-(HEAD_D + 2) / 2, -SLOT_W / 2, -0.01])
+    rod = thread(SCREW_D / 2, SCREW_DEPTH, SCREW_P, L).translate([0, 0, HEAD_H - 0.01])
+    tip = Manifold.cylinder(1.0, SCREW_D / 2, SCREW_D / 2 - SCREW_DEPTH - 0.2, 96).translate([0, 0, HEAD_H + L - 1.0])
+    cut = Manifold.cylinder(1.0, SCREW_D, SCREW_D, 8).translate([0, 0, HEAD_H + L - 1.0]) - tip   # chamfer the tip
+    one = head - slot + rod - cut
+    gap = HEAD_D + 3
+    return (one + one.translate([gap, 0, 0]) + one.translate([0, gap, 0]) + one.translate([gap, gap, 0])), L
+
+
+def tap_base(t):
+    """Cuts the threads into the bosses of the base."""
+    from manifold3d import Manifold
+    m = to_manifold(t)
+    for px, py in SCREW_XY:
+        rod = thread(SCREW_D / 2, SCREW_DEPTH, SCREW_P, BOSS_TOP + 2, THREAD_CLEAR).translate([px, py, -1])
+        lead = Manifold.cylinder(1.2, SCREW_D / 2 + 0.6, SCREW_D / 2 - SCREW_DEPTH, 96).translate([px, py, -0.01])   # entry chamfer
+        m = m - rod - lead
+    return to_trimesh(m)
 
 
 def preview(t, path, views, title=""):
@@ -411,10 +451,14 @@ if __name__ == "__main__":
     ts = mesh(fs, as_, out_dir / "capsule_saddle.stl")
     e = ts.bounds[1] - ts.bounds[0]
     print(f"capsule_saddle.stl: {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, {len(ts.faces)} faces, watertight={ts.is_watertight}, hand arc radius {r:.0f} mm")
-    tp, grip = build_pins()
-    tp.export(out_dir / "capsule_pins.stl")
-    e = tp.bounds[1] - tp.bounds[0]
-    print(f"capsule_pins.stl: 4 snap pins, grip {grip:.1f} mm, set {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, watertight={tp.is_watertight}")
+    tb = tap_base(tb)
+    tb.export(out_dir / "capsule_base.stl")
+    print(f"  threads cut: base watertight={tb.is_watertight}")
+    sm, L = build_screws()
+    tsc = to_trimesh(sm)
+    tsc.export(out_dir / "capsule_screws.stl")
+    e = tsc.bounds[1] - tsc.bounds[0]
+    print(f"capsule_screws.stl: 4 screws M{SCREW_D:g} x {SCREW_P} pitch, thread {L:.1f} mm, set {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, watertight={tsc.is_watertight}")
     # For looking at, not for printing: the saddle turned arc-down with the base on it.
     import trimesh
     h = ts.bounds[1][2]
