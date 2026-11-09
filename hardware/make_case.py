@@ -53,6 +53,15 @@ WIRE_END = 1.5          # room at each short end of the tray
 SENSOR_DISTANCE = 50.0  # centre to centre of the two chips; enter the same number in the app
 STRAP_WIDTH = 20.0      # elastic band width: it runs in a channel between the base and the saddle
 STRAP_THICK = 1.6       # channel depth (an elastic band is about 1-1.5 mm thick)
+# The two parts are held by four printed snap pins instead of glue: square shank through both parts
+# from the skin side, head sunk into the saddle, split barbed tip snapping over the base plate.
+# Squeeze the tip with tweezers to take them out.
+PIN_XY = [(sx * 17.5, sy * 12.5) for sx in (-1, 1) for sy in (-1, 1)]   # outside the tray, beside the pockets, clear of the strap channel
+PIN_W = 2.8             # square shank
+PIN_HOLE = 3.0          # square hole in both parts
+PIN_HEAD = (6.0, 1.2)   # head bar length, thickness (sunk into the saddle)
+PIN_BARB = 0.35         # how far each barb sticks out
+PIN_SLOT = 0.9          # slot between the two prongs
 # Back of the hand: hand relaxed, a straight ruler across the back of the hand where the capsule
 # sits, touching the highest point; the gap under the ruler 40 mm left and right of that point.
 ARCH_DROP_AT_40 = 5.0   # mm; 5 is a placeholder, not a measurement
@@ -219,6 +228,10 @@ def base_field(rng):
     for s in (-1, 1):
         keep = smin(keep, rrect(X - s * SENSOR_DISTANCE / 2, Y, 5.0, 1.8, 1.0), 0.6)   # arrow strip
     keep = smin(keep, rrect(X, Y + TY + HOLDER_D / 2, MB_W / 2 + 4.0, HOLDER_D / 2 + 2.5, 1.5), 0.6)
+    PH = np.full_like(X, 1e3)                        # snap pin holes
+    for px, py in PIN_XY:
+        keep = smin(keep, np.hypot(X - px, Y - py) - 3.4, 0.6)      # solid boss around each pin
+        PH = np.minimum(PH, rrect(X - px, Y - py, PIN_HOLE / 2, PIN_HOLE / 2, 0.3))
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     top = PLATE + TRAY_H
     on_xwall = (np.abs(X) > TX - WALL - 0.1) & (np.abs(Y) < TY - 4.5)
@@ -266,6 +279,7 @@ def base_field(rng):
         # Lattice holes through the plate.
         if z < PLATE + 1.0:
             d = np.maximum(d, keep)                  # keep > 0 inside a cell: an opening
+            d = np.maximum(d, -PH)                   # snap pin holes through the plate
         # Voronoi relief, 0.6 mm deep, on the outside of the tray walls.
         if PLATE + 1.4 < z < top - 1.4:
             near_out = (T > -0.6) & (T < 0.3)
@@ -293,6 +307,12 @@ def saddle_field(rng):
     rim = O + 2.4                                    # > 0 within 2.4 mm of the edge: the solid rim
     walls = np.abs(np.abs(Y) - CH_HY - 1.2) - 1.2   # solid strips along both sides of the channel (glue lines)
     lattice = smin(smin(bars, -rim, 0.8), walls, 0.8)
+    PH = np.full_like(X, 1e3)
+    HEAD = np.full_like(X, 1e3)
+    for px, py in PIN_XY:
+        lattice = smin(lattice, np.hypot(X - px, Y - py) - 3.8, 0.6)   # solid boss around each pin
+        PH = np.minimum(PH, rrect(X - px, Y - py, PIN_HOLE / 2, PIN_HOLE / 2, 0.3))
+        HEAD = np.minimum(HEAD, rrect(X - px, Y - py, (PIN_HEAD[0] + 0.4) / 2, (PIN_W + 0.4) / 2, 0.4))
     lattice = np.maximum(lattice, O)                 # stay inside the outline
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     for k, z in enumerate(zs):
@@ -303,6 +323,8 @@ def saddle_field(rng):
         # Strap channel in the flat face, the full length: the band runs between saddle and base.
         ch = np.maximum(np.abs(Y) - CH_HY, z - STRAP_THICK)
         d = np.maximum(d, -ch)
+        d = np.maximum(d, -PH)                                    # snap pin holes
+        d = np.maximum(d, -np.maximum(HEAD, (Z_TOP - PIN_HEAD[1] - 0.2) - z))   # head sunk on the skin side
         field[:, :, k] = d
     return field, (xs, ys, zs), r
 
@@ -330,6 +352,29 @@ def mesh(field, axes, path, target_faces=180_000):
     t.fix_normals()
     t.export(path)
     return t
+
+
+def build_pins():
+    """Four snap pins, printed lying on their side (flat face on the bed, no supports)."""
+    from manifold3d import Manifold, CrossSection
+    import trimesh
+    # Grip: saddle thickness at the pins (less the sunk head) + the base plate.
+    zt, _ = arch_top(np.array([abs(PIN_XY[0][0])]))
+    grip = float(zt[0]) + STRAP_THICK - PIN_HEAD[1] - 0.2 + PLATE
+    hw, hl = PIN_W / 2, PIN_HEAD[0] / 2
+    tip = 2.2
+    # Outline in the bed plane: x along the pin, y across; extruded PIN_W high.
+    head = [(0, -hl), (PIN_HEAD[1], -hl), (PIN_HEAD[1], hl), (0, hl)]
+    x0, x1 = PIN_HEAD[1], PIN_HEAD[1] + grip + 0.15                 # barb catches just past the plate
+    shank = [(x0 - 0.01, -hw), (x1, -hw), (x1, -hw - PIN_BARB), (x1 + tip, -hw * 0.45),
+             (x1 + tip, hw * 0.45), (x1, hw + PIN_BARB), (x1, hw), (x0 - 0.01, hw)]
+    prof = CrossSection([head]) + CrossSection([shank])
+    slot = CrossSection([[(x1 - 4.5, -PIN_SLOT / 2), (x1 + tip + 1, -PIN_SLOT / 2), (x1 + tip + 1, PIN_SLOT / 2), (x1 - 4.5, PIN_SLOT / 2)]])
+    pin = Manifold.extrude(prof - slot, PIN_W)
+    pins = [pin.translate([0, k * (PIN_HEAD[0] + 3), 0]) for k in range(4)]
+    m = pins[0] + pins[1] + pins[2] + pins[3]
+    mesh = m.to_mesh()
+    return trimesh.Trimesh(np.asarray(mesh.vert_properties)[:, :3], np.asarray(mesh.tri_verts)), grip
 
 
 def preview(t, path, views, title=""):
@@ -366,6 +411,10 @@ if __name__ == "__main__":
     ts = mesh(fs, as_, out_dir / "capsule_saddle.stl")
     e = ts.bounds[1] - ts.bounds[0]
     print(f"capsule_saddle.stl: {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, {len(ts.faces)} faces, watertight={ts.is_watertight}, hand arc radius {r:.0f} mm")
+    tp, grip = build_pins()
+    tp.export(out_dir / "capsule_pins.stl")
+    e = tp.bounds[1] - tp.bounds[0]
+    print(f"capsule_pins.stl: 4 snap pins, grip {grip:.1f} mm, set {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, watertight={tp.is_watertight}")
     # For looking at, not for printing: the saddle turned arc-down with the base on it.
     import trimesh
     h = ts.bounds[1][2]
