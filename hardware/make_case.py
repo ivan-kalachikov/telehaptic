@@ -100,6 +100,24 @@ def voronoi_edges(x, y, spacing, jitter, rng, extent):
     return (d[..., 1] - d[..., 0]) / 2
 
 
+def shared_lattice(X, Y):
+    """The same Voronoi cells for the base and the saddle, so their bars line up when glued and you
+    can see through both."""
+    return voronoi_edges(X, Y, 6.0, 1.8, np.random.default_rng(SEED + 1), (HALF_L, MID_HY + 6.0))
+
+
+def wall_pattern(u, z, rng_seed=SEED + 2):
+    """Voronoi cell walls in the plane of a tray wall (u along the wall, z up)."""
+    rng = np.random.default_rng(rng_seed)
+    gu = np.arange(-60, 60, 4.2)
+    gz = np.arange(-4, 30, 3.8)
+    su, sz = np.meshgrid(gu, gz)
+    seeds = np.c_[su.ravel(), sz.ravel()] + rng.uniform(-1.3, 1.3, (su.size, 2))
+    d = np.sqrt((u[..., None] - seeds[:, 0]) ** 2 + (z - seeds[:, 1]) ** 2)
+    d.sort(axis=-1)
+    return (d[..., 1] - d[..., 0]) / 2
+
+
 # ---------------------------------------------------------------- shared geometry
 
 gx_, gy_ = PARTS["gy271"]
@@ -170,12 +188,7 @@ def base_field(rng):
     xs, ys, zs = grid(PLATE + TRAY_H)
     X, Y = np.meshgrid(xs, ys, indexing="ij")
     O = outline(X, Y)
-    # Voronoi relief on the wings: between the tray and the pockets and around them.
-    V = voronoi_edges(X, Y, 5.5, 1.6, rng, (HALF_L, MID_HY))
-    wing = (np.abs(X) > TX + 2.0) & (O < -1.8)
-    for s in (-1, 1):
-        wing &= rrect(X - s * SENSOR_DISTANCE / 2, Y, PX / 2 + WALL + 1.2, PY / 2 + WALL + 1.2, 1.5) > 0
-    groove = wing & (V < 0.45)
+    V = shared_lattice(X, Y)
     # Pocket floor arrows (+x), engraved 0.4 mm.
     arrow = np.zeros_like(X, dtype=bool)
     for s in (-1, 1):
@@ -197,8 +210,19 @@ def base_field(rng):
                 a = rrect(X - (ix - sx * leg / 2 + sx * WALL / 2), Y - (iy + sy * WALL / 2), (leg + WALL) / 2, WALL / 2, 0.6)
                 b = rrect(X - (ix + sx * WALL / 2), Y - (iy - sy * leg / 2 + sy * WALL / 2), WALL / 2, (leg + WALL) / 2, 0.6)
                 stops = np.minimum(stops, np.minimum(a, b))
+    # The plate is an open Voronoi lattice like the saddle. Solid where it must be: a rim along the
+    # edge, a band under the tray walls, around the corner stops, under the arrows, the motor holder.
+    keep = V - 0.75
+    keep = smin(keep, -(O + 2.2), 0.6)                                   # rim
+    keep = smin(keep, np.abs(T) - 2.4, 0.6)                              # under the tray walls
+    keep = smin(keep, stops - 1.2, 0.6)
+    for s in (-1, 1):
+        keep = smin(keep, rrect(X - s * SENSOR_DISTANCE / 2, Y, 5.0, 1.8, 1.0), 0.6)   # arrow strip
+    keep = smin(keep, rrect(X, Y + TY + HOLDER_D / 2, MB_W / 2 + 4.0, HOLDER_D / 2 + 2.5, 1.5), 0.6)
     field = np.empty((len(xs), len(ys), len(zs)), dtype=np.float32)
     top = PLATE + TRAY_H
+    on_xwall = (np.abs(X) > TX - WALL - 0.1) & (np.abs(Y) < TY - 4.5)
+    on_ywall = (np.abs(Y) > TY - WALL - 0.1) & (np.abs(X) < TX - 4.5)
     for k, z in enumerate(zs):
         plate = rounded_and(O + 1.2, (z - PLATE) + 1.2, 1.2)
         tray = rounded_and(T + 0.9, (z - top) + 0.9, 0.9)
@@ -239,9 +263,16 @@ def base_field(rng):
         z_sw = PLATE + TRAY_H / 2
         win = rrect(Y - y_sw, z - z_sw, 1.6, (2.0 + SWITCH_TRAVEL) / 2 + 0.6, 0.8)
         d = np.maximum(d, -np.maximum(in_sx, win))
+        # Lattice holes through the plate.
+        if z < PLATE + 1.0:
+            d = np.maximum(d, keep)                  # keep > 0 inside a cell: an opening
+        # Voronoi relief, 0.6 mm deep, on the outside of the tray walls.
+        if PLATE + 1.4 < z < top - 1.4:
+            near_out = (T > -0.6) & (T < 0.3)
+            Wp = np.where(on_xwall, wall_pattern(Y, z), wall_pattern(X, z, SEED + 3))
+            relief = near_out & (on_xwall | on_ywall) & (Wp < 0.35)
+            d = np.where(relief, np.maximum(d, T + 0.6), d)
         # Engravings on the top of the plate.
-        if PLATE - 0.45 < z < PLATE + 0.6:
-            d = np.where(groove & (O < -0.1), np.maximum(d, (PLATE - 0.45) - z), d)
         if PLATE - 0.4 < z < PLATE + 0.6:
             d = np.where(arrow, np.maximum(d, (PLATE - 0.4) - z), d)
         field[:, :, k] = d
@@ -257,7 +288,7 @@ def saddle_field(rng):
     O = outline(X, Y)
     Z_TOP, _ = arch_top(X)
     Z_TOP = Z_TOP + STRAP_THICK                      # the channel sits on top of the minimum thickness
-    V = voronoi_edges(X, Y, 6.0, 1.8, rng, (HALF_L, MID_HY))
+    V = shared_lattice(X, Y)
     bars = V - 0.75                                  # bars about 1.5 mm wide
     rim = O + 2.4                                    # > 0 within 2.4 mm of the edge: the solid rim
     walls = np.abs(np.abs(Y) - CH_HY - 1.2) - 1.2   # solid strips along both sides of the channel (glue lines)
@@ -335,6 +366,14 @@ if __name__ == "__main__":
     ts = mesh(fs, as_, out_dir / "capsule_saddle.stl")
     e = ts.bounds[1] - ts.bounds[0]
     print(f"capsule_saddle.stl: {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm, {len(ts.faces)} faces, watertight={ts.is_watertight}, hand arc radius {r:.0f} mm")
+    # For looking at, not for printing: the saddle turned arc-down with the base on it.
+    import trimesh
+    h = ts.bounds[1][2]
+    s2 = ts.copy(); s2.apply_transform(trimesh.transformations.reflection_matrix([0, 0, h / 2], [0, 0, 1]))
+    b2 = tb.copy(); b2.apply_translation([0, 0, h])
+    asm = trimesh.util.concatenate([s2, b2])
+    asm.export(out_dir / "capsule_assembly_preview.stl")
+    print("capsule_assembly_preview.stl: both parts together, to look at (print the two parts separately)")
     if "--show" in sys.argv:
         preview(tb, out_dir / "preview_base.png", [(38, -58), (90, -90)])
         preview(ts, out_dir / "preview_saddle.png", [(45, -58), (12, -90)])
