@@ -275,7 +275,8 @@ def base_field(rng):
         shelf = rounded_and(rrect(X, Y - (y_out + yw) / 2 - 0.5, ex + 1.6, (yw - y_out) / 2 + 0.5, 1.2) + 1.0, (z - PLATE) + 1.0, 1.0)
         posts = np.minimum(*(rrect(X - sx * (ex - 1.2 + post_hx / 2), Y - (y_out + yw) / 2 - 0.3, post_hx / 2, (yw - y_out) / 2 + 0.3, 0.7) for sx in (-1, 1)))
         posts = rounded_and(posts + 0.6, (z - top) + 0.6, 0.6)
-        d = smin(d, np.maximum(smin(shelf, posts, 1.0), -z), 1.2)
+        d = smin(d, smin(shelf, posts, 1.0), 1.2)
+        d = np.maximum(d, -z)                                     # flat bottom again: the blend must not bulge below the bed
         groove_mb = np.maximum(np.maximum(np.abs(X) - ex, np.maximum(Y - y_slot1, y_slot0 - Y)), MOTOR_FLOOR - z)
         d = np.maximum(d, -groove_mb)
         # Notch at the top of the wrist-side wall for the motor wires.
