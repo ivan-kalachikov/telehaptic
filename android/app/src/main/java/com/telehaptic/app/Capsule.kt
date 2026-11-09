@@ -88,6 +88,19 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         fun onLink(connected: Boolean) {}
         /** Connected, but the data stopped (true) or came back (false). */
         fun onStall(stalled: Boolean) {}
+        /**
+         * Data is arriving (true) or stopped (false), whatever the reason: a lost link, a link without
+         * data, Bluetooth off. "True" comes with the first packet, not with the reconnect, so a link
+         * that comes back without data is not announced as back. Each change is reported once.
+         */
+        fun onUsable(usable: Boolean) {}
+    }
+
+    private var usable = false
+    private fun setUsable(u: Boolean) {
+        if (u == usable) return
+        usable = u
+        listeners.forEach { it.onUsable(u) }
     }
 
     private val thread = HandlerThread("capsule").apply { start() }
@@ -250,6 +263,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
     }
 
     private fun closeGatt() {
+        setUsable(false)
         handler.removeCallbacks(pingRunnable)
         discoveryStarted = false
         servicesReady = false
@@ -411,6 +425,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         lastDataMs = SystemClock.elapsedRealtime()
         setStatus(if (up) Status.CONNECTED else Status.RECONNECTING)
         listeners.forEach { it.onLink(up) }
+        if (!up) setUsable(false)   // "usable" comes back with the next packet
     }
 
     private fun onNotify(uuid: UUID, value: ByteArray, rx: Long) {
@@ -431,6 +446,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         if (p.samples.isEmpty()) return
         lastDataMs = SystemClock.elapsedRealtime()
         if (status == Status.NO_DATA) { setStatus(Status.CONNECTED); listeners.forEach { it.onStall(false) } }
+        setUsable(true)
         // A lost CFG line would leave the sensor list out of date: ask for the status again.
         if (p.nMags != info.mags.size && SystemClock.elapsedRealtime() - lastStatusRequestMs > 2000) {
             lastStatusRequestMs = SystemClock.elapsedRealtime()
@@ -457,7 +473,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         val pong = info.apply(line)
         if (line.startsWith("BAT ")) {
             val mv = info.batteryMv
-            if (mv in 1 until LOW_BATTERY_MV && !lowBatterySaid) { lowBatterySaid = true; App.get().cues.alert("Capsule battery low") }
+            if (mv in 1 until LOW_BATTERY_MV && !lowBatterySaid) { lowBatterySaid = true; App.get().cues.notice("Capsule battery low") }
             if (mv >= LOW_BATTERY_MV + 100) lowBatterySaid = false
         }
         if (pong != null) {
@@ -532,6 +548,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
             Status.CONNECTING -> "Connecting to the capsule…"
             Status.SEARCHING -> "Looking for the capsule…"
             Status.NOT_FOUND -> "Capsule not found"
+            Status.BT_OFF -> "Bluetooth is off"
             else -> null
         }?.let { CapsuleService.update(ctx, it) }
         publish()
@@ -556,6 +573,7 @@ class Capsule(private val ctx: Context, private val log: AppLog, private val pre
         if (status == Status.CONNECTED && quietMs > 2500) {
             setStatus(Status.NO_DATA)
             listeners.forEach { it.onStall(true) }
+            setUsable(false)
         }
         // Connected without data for long (a subscription that did not take, a capsule that hung
         // and restarted while the link stayed): start the connection again.

@@ -15,6 +15,9 @@ class Cues(ctx: Context, private val log: AppLog) {
     val voice: kotlinx.coroutines.flow.StateFlow<String> = _voice
     val ttsStatus get() = _voice.value
     @Volatile private var alertUntil = 0L
+    /** When the last alert was spoken (uptime ms): training repeats a key name an alert may have covered. */
+    @Volatile var lastAlertUptime = 0L
+        private set
 
     init {
         tts = TextToSpeech(ctx) { st ->
@@ -39,6 +42,34 @@ class Cues(ctx: Context, private val log: AppLog) {
         tone?.startTone(ToneGenerator.TONE_PROP_NACK, 300)
         if (ttsStatus == "ok") tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "alert")
         alertUntil = android.os.SystemClock.uptimeMillis() + 3000
+        lastAlertUptime = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** Something to know but not urgent (battery low): spoken after whatever is being said, nothing cut. */
+    fun notice(text: String) {
+        if (ttsStatus == "ok") tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "notice")
+    }
+
+    /** Checks the voice again (after the person installed one in the system settings). */
+    fun recheck() {
+        val t = tts ?: return
+        if (_voice.value == "ok" || _voice.value == "starting") return
+        try {
+            val r = t.setLanguage(Locale.US)
+            _voice.value = if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) "no_english" else if (r >= 0) "ok" else _voice.value
+            log.i("cues", "tts recheck ${_voice.value}")
+        } catch (e: Exception) { log.w("cues", "tts recheck", e) }
+    }
+
+    private val audio = ctx.getSystemService(AudioManager::class.java)
+
+    /** Media volume as a share of its maximum (cues and speech use the media stream). */
+    fun volumeShare(): Double = try {
+        audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    } catch (_: Exception) { 1.0 }
+
+    fun raiseVolume() {
+        try { audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI) } catch (_: Exception) {}
     }
 
     /** Cues replace each other (a new key name cuts the old one), but never cut an alert just spoken. */

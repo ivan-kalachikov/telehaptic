@@ -38,6 +38,8 @@ class Training(private val app: App) {
         val error: String = "",
         val kept: Boolean = true,        // re-fit: the new model replaced the old one
         val canUndo: Boolean = false,
+        val undone: Boolean = false,     // the re-fit was undone: the earlier model is back
+        val practice: Boolean = false,   // a re-fit on a few keys only
         val full: Boolean = true,        // re-fit over all keys
     )
 
@@ -61,29 +63,42 @@ class Training(private val app: App) {
         // Capsule lost in the middle: pause, so the next touches are not lost or blamed on the person.
         // Data stopped while connected counts the same.
         app.capsule.addListener(object : Capsule.Listener {
-            override fun onLink(connected: Boolean) { main.post { onLinkChange(connected) } }
-            override fun onStall(stalled: Boolean) { main.post { onLinkChange(!stalled) } }
+            override fun onUsable(usable: Boolean) { main.post { onLinkChange(usable) } }
         })
     }
 
     /** Paused because the capsule went away: going on by itself when it is back. */
     private var pausedByLink = false
+    /** Trial number of each stored hold, in order: "Redo last" logs which trial it took back. */
+    private val holdTrials = ArrayList<Int>()
 
+    private var linkDown = false
+    private val resume = Runnable {
+        if (_ui.value.paused && pausedByLink && app.capsule.ui.value.status == Capsule.Status.CONNECTED) pause(false)
+    }
+
+    /** A stall followed by a disconnect is one loss: said once. A loss during the countdown cancels it. */
     private fun onLinkChange(up: Boolean) {
         val u = _ui.value
         if (u.phase != Phase.HOLDS && u.phase != Phase.TAPS) return
-        if (!up && !u.paused) {
-            pause(true)
-            pausedByLink = true
-            _ui.value = _ui.value.copy(hint = "Capsule lost. Paused; training goes on by itself when it is back.")
-            app.cues.alert("Capsule lost. Paused.")
-        } else if (up && u.paused && pausedByLink) {
-            _ui.value = _ui.value.copy(hint = "Capsule is back. Going on in 3 seconds.")
-            app.cues.say("Capsule is back. Going on.")
-            main.postAtTime({
-                val v = _ui.value
-                if (v.paused && pausedByLink && app.capsule.ui.value.status == Capsule.Status.CONNECTED) pause(false)
-            }, token, SystemClock.uptimeMillis() + 3000)
+        if (!up) {
+            if (linkDown) return
+            linkDown = true
+            main.removeCallbacks(resume)
+            if (!u.paused) { pause(true); pausedByLink = true }
+            if (pausedByLink) {
+                _ui.value = _ui.value.copy(hint = "Capsule lost. Paused; training goes on by itself when it is back.")
+                app.cues.alert("Capsule lost. Paused.")
+            }
+        } else {
+            if (!linkDown) return
+            linkDown = false
+            if (u.paused && pausedByLink) {
+                _ui.value = _ui.value.copy(hint = "Capsule is back. Going on in 3 seconds.")
+                app.cues.say("Capsule is back. Going on.")
+                main.removeCallbacks(resume)
+                main.postDelayed(resume, 3000)
+            }
         }
     }
 
@@ -91,14 +106,14 @@ class Training(private val app: App) {
 
     fun startTraining() {
         if (active || app.session.running || app.recorder.isOpen) return
-        touches.clear(); restRows.clear(); emptyHolds = 0; lastWasSkip = false; pausedByLink = false
+        touches.clear(); restRows.clear(); holdTrials.clear(); emptyHolds = 0; lastWasSkip = false; pausedByLink = false; linkDown = false
         app.engine.claim(this, Engine.Mode.OFF) {}   // typing elsewhere must not take the touches of the holds
         holdSeq = Keys.sequence(2, Random.Default)
         tapSeq = Keys.sequence(2, Random.Default).toMutableList()
         _ui.value = Ui(phase = Phase.STARTING)
         beginRecording(Kind.TRAIN) {
             _ui.value = Ui(phase = Phase.HOLDS, total = holdSeq.size)
-            app.cues.say("Training. First, touches with a hold.")
+            app.cues.say("Training. The phone says a key: touch it at one beep, release at two.")
             main.postAtTime({ holdTrial(0) }, token, SystemClock.uptimeMillis() + 2500)
         }
     }
@@ -107,18 +122,21 @@ class Training(private val app: App) {
     fun startRetrain(keys: List<String>, reps: Int) {
         if (active || app.session.running || app.recorder.isOpen) return
         if (app.brain.model == null) { _ui.value = Ui(error = "Complete the training first."); return }
-        touches.clear(); lastWasSkip = false; pausedByLink = false
+        touches.clear(); lastWasSkip = false; pausedByLink = false; linkDown = false
         app.engine.claim(this, Engine.Mode.OFF) {}
         val rnd = Random.Default
         val seq = ArrayList<String>()
         repeat(reps) { var b: List<String>; do { b = keys.shuffled(rnd) } while (seq.isNotEmpty() && keys.size > 1 && b[0] == seq.last()); seq.addAll(b) }
         tapSeq = seq
-        _ui.value = Ui(phase = Phase.STARTING, retrain = true)
         retrainFull = keys.size == Keys.ALL.size
+        _ui.value = Ui(phase = Phase.STARTING, retrain = true, practice = !retrainFull)
         beginRecording(Kind.RETRAIN) {
             app.brain.armSegmenterFreshRest()
             app.recorder.event("detector", -1, app.brain.detectorText())
-            startTaps(retrain = true)
+            // The rest level is measured from the first still moment: ask for a relaxed hand before the first key.
+            app.cues.say((if (retrainFull) "Re-fit" else "Practice") + ". Hand relaxed, thumb away from the fingers.")
+            _ui.value = _ui.value.copy(hint = "Hand relaxed, thumb away from the fingers…")
+            main.postAtTime({ if (_ui.value.phase == Phase.STARTING) startTaps(retrain = true) }, token, SystemClock.uptimeMillis() + 3000)
         }
     }
 
@@ -129,7 +147,11 @@ class Training(private val app: App) {
             if (!app.recorder.isOpen) { fail("Could not start the recording. Details in Logs."); return@start }
             session = id; app.recorder.event("start"); then()
         }
-        if (!ok) _ui.value = Ui(error = "Another recording is still running. Finish it first.")
+        if (!ok) {
+            app.engine.release(this)
+            _ui.value = Ui(error = "Another recording is still running. Open Experiments and stop it first.")
+            app.cues.alert("Another recording is still running")
+        }
     }
 
     // ------------------------------------------------------------ holds
@@ -142,10 +164,15 @@ class Training(private val app: App) {
         _ui.value = _ui.value.copy(key = k, index = i, holdStep = HoldStep.READY, hint = "")
         app.recorder.event("announce", i, k)
         app.cues.sayKey(k)
+        val announcedAt = SystemClock.uptimeMillis()
         main.postAtTime({
             if (_ui.value.paused || _ui.value.phase != Phase.HOLDS) { holdTrial(i); return@postAtTime }   // paused before the press: redo this key
+            // An alert (e.g. battery low) spoken over the key name: the key may not have been heard. Say it again.
+            if (app.cues.lastAlertUptime > announcedAt) { holdTrial(i); return@postAtTime }
             val pausesAtPress = pauses
             val press = SystemClock.elapsedRealtimeNanos()
+            // Rest level: the 0.8 s right before the press, well after the previous lift-off.
+            app.engine.windowMedian(press - 900_000_000L, press - 100_000_000L) { x -> if (x != null) restRows.add(x) }
             app.recorder.event("press", i, k)
             app.cues.press()
             _ui.value = _ui.value.copy(holdStep = HoldStep.HOLD)
@@ -160,18 +187,14 @@ class Training(private val app: App) {
                     holdSeq = holdSeq.toMutableList().apply { add(minOf(i + 1, size), k) }
                     _ui.value = _ui.value.copy(total = holdSeq.size)
                 } else app.engine.windowMedian(press + 500_000_000L, release - 200_000_000L) { x ->
-                    if (x != null) { touches.add(Touch(k, x, "hold${i / 12}", "hold")); emptyHolds = 0 }
+                    if (x != null) { touches.add(Touch(k, x, "hold${i / 12}", "hold")); holdTrials.add(i); emptyHolds = 0 }
                     else if (++emptyHolds >= 3 && !_ui.value.paused) {
                         pause(true)
                         _ui.value = _ui.value.copy(hint = "No data from the capsule. Paused. Switch the capsule off and on, then tap Resume.")
                         app.cues.alert("No data from the capsule. Paused.")
                     }
                 }
-                main.postAtTime({
-                    val r0 = SystemClock.elapsedRealtimeNanos()
-                    app.engine.windowMedian(r0 - 800_000_000L, r0) { x -> if (x != null) restRows.add(x) }
-                    holdTrial(i + 1)
-                }, token, SystemClock.uptimeMillis() + 1000)
+                main.postAtTime({ holdTrial(i + 1) }, token, SystemClock.uptimeMillis() + 1000)
             }, token, SystemClock.uptimeMillis() + 1500)
         }, token, SystemClock.uptimeMillis() + 1500)
     }
@@ -215,16 +238,34 @@ class Training(private val app: App) {
         announceTap()
     }
 
+    private var cueId = 0
+
     private fun announceTap() {
         val k = tapSeq.getOrNull(tapIndex) ?: return
         lastTapAt = SystemClock.elapsedRealtime()
         app.recorder.event("tap_cue", tapIndex, k)
         app.cues.sayKey(k)
-        val my = tapIndex
+        missCheck(++cueId, k, 0)
+    }
+
+    /**
+     * No tap found 8 s after the cue: a spoken hint with the key again. Another 8 s: the key moves
+     * to the end and the next one comes, so the person never waits in silence or has to reach the phone.
+     */
+    private fun missCheck(id: Int, k: String, misses: Int) {
         main.postAtTime({
-            if (_ui.value.phase == Phase.TAPS && tapIndex == my && !_ui.value.paused) {
+            if (_ui.value.phase != Phase.TAPS || cueId != id || _ui.value.paused) return@postAtTime
+            if (misses == 0) {
                 _ui.value = _ui.value.copy(hint = "Touch not detected. Touch a little firmer and keep the thumb there for a moment.")
-                app.cues.say("Not detected. Touch a bit firmer. ${Cues.keyName(k)}.")
+                app.cues.say("Not detected. Touch a bit firmer and keep the thumb there a moment. ${Cues.keyName(k)}.")
+                missCheck(id, k, 1)
+            } else {
+                app.recorder.event("tap_missed", tapIndex, k)
+                tapSeq.add(k)
+                tapIndex++
+                app.cues.say("Still not detected. ${Cues.keyName(k)} comes again at the end.")
+                _ui.value = _ui.value.copy(index = tapIndex, key = tapSeq[tapIndex], total = tapSeq.size, hint = "Key $k comes again at the end.")
+                main.postAtTime({ if (_ui.value.phase == Phase.TAPS && !_ui.value.paused) announceTap() }, token, SystemClock.uptimeMillis() + 2500)
             }
         }, token, SystemClock.uptimeMillis() + 8000)
     }
@@ -269,11 +310,12 @@ class Training(private val app: App) {
             }
             Phase.HOLDS -> if (touches.lastOrNull()?.source == "hold") {
                 val last = touches.removeAt(touches.size - 1)
+                val trial = holdTrials.removeLastOrNull() ?: u.index
                 // Put the key back right after the current one.
                 val l = holdSeq.toMutableList()
                 l.add(minOf(u.index + 1, l.size), last.key)
                 holdSeq = l
-                app.recorder.event("repeat", u.index, last.key)
+                app.recorder.event("repeat", trial, last.key)   // the trial of the hold taken back (the analysis drops it)
                 _ui.value = u.copy(total = holdSeq.size, hint = "Key ${last.key} will come again.")
             }
             else -> {}
@@ -319,10 +361,14 @@ class Training(private val app: App) {
                     _ui.value = _ui.value.copy(phase = Phase.RESULT, before = before, report = a, kept = kept,
                         canUndo = retrain && kept, full = !retrain || retrainFull)
                     val pct = Math.round(a.share * 100)
+                    val name = if (retrain && !retrainFull) "Practice" else "Re-fit"
+                    val mixed = a.confusions.firstOrNull()?.let { (x, y, _) -> " Keys ${Cues.keyName(x)} and ${Cues.keyName(y)} get mixed up most." } ?: ""
+                    val b = before
                     app.cues.say(when {
-                        !retrain -> "Training done. It recognises $pct percent of quick taps."
-                        !kept -> "Re-fit done. The new taps did not help, so the previous model is kept."
-                        else -> "Re-fit done. $pct percent."
+                        !retrain -> "Training done. $pct percent: ${com.telehaptic.app.ui.verdict(a.share).substringBefore(';').lowercase()}.$mixed"
+                        !kept -> "$name done. The new taps did not help, so the previous model is kept."
+                        b != null -> "$name done. From ${Math.round(b.share * 100)} to $pct percent."
+                        else -> "$name done. $pct percent."
                     })
                 }
             }
@@ -331,6 +377,7 @@ class Training(private val app: App) {
 
     private fun fail(msg: String) {
         main.removeCallbacksAndMessages(token)
+        main.removeCallbacks(resume)
         app.cues.alert(msg.substringBefore(" Details"))
         app.engine.release(this)
         app.recorder.finish(true) {}
@@ -341,6 +388,7 @@ class Training(private val app: App) {
         if (!active) { _ui.value = Ui(); return }
         app.recorder.event("abort")
         main.removeCallbacksAndMessages(token)
+        main.removeCallbacks(resume)
         app.engine.release(this)
         app.recorder.finish(true) {}
         _ui.value = Ui()
@@ -351,7 +399,8 @@ class Training(private val app: App) {
     /** Puts back the model from before the re-fit. */
     fun undo() {
         app.engine.post { app.brain.undoRetrain() }
-        _ui.value = _ui.value.copy(canUndo = false, kept = false)
+        _ui.value = _ui.value.copy(canUndo = false, undone = true)
+        app.cues.say("Undone. The earlier model is back.")
     }
 
     /** For screenshots only. */

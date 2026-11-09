@@ -1,5 +1,9 @@
 package com.telehaptic.app.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
+
+import androidx.compose.foundation.clickable
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,15 +69,8 @@ fun HandDiagram(
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val accent = MaterialTheme.colorScheme.primary
     val keyC = keyColor()
-    var tapMod: Modifier = Modifier
-    if (onKey != null) tapMod = Modifier.pointerInput(Unit) {
-        detectTapGestures { p ->
-            layout(size.width.toFloat(), size.height.toFloat())
-                .firstOrNull { p.x >= it.left && p.x <= it.left + it.width && p.y >= it.top && p.y <= it.top + it.height }
-                ?.let { onKey(it.key) }
-        }
-    }
-    Canvas(modifier.aspectRatio(1.6f).then(tapMod).semantics {
+    androidx.compose.foundation.layout.Box(modifier.aspectRatio(1.6f)) {
+    Canvas(Modifier.matchParentSize().semantics {
         contentDescription = "Keypad on the four fingers" + if (key.isNotEmpty() && mark != Mark.NONE) ", key $key highlighted" else ""
     }) {
         val boxes = layout(size.width, size.height)
@@ -115,7 +112,21 @@ fun HandDiagram(
             }
         }
     }
+    // Tappable keys: one node per key, so TalkBack can reach and name each of them.
+    if (onKey != null) androidx.compose.foundation.layout.Column(Modifier.matchParentSize()) {
+        for (f in 0 until 4) androidx.compose.foundation.layout.Row(Modifier.weight(1f).fillMaxWidth()) {
+            for (c in 0 until 3) {
+                val k = Keys.ALL[f * 3 + c]
+                androidx.compose.foundation.layout.Box(Modifier.weight(COLS[c]).fillMaxHeight()
+                    .keyTarget(k, onKey))
+            }
+        }
+    }
+    }
 }
+
+private fun Modifier.keyTarget(k: String, onKey: (String) -> Unit) =
+    this.clickable(onClickLabel = "type $k") { onKey(k) }.semantics { contentDescription = "$k, ${Keys.letters(k)}" }
 
 /** Line illustration of a hand posture or of the calibration (160 x 110 box, drawn to fit). */
 @Composable

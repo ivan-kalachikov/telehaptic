@@ -2,6 +2,17 @@
 
 package com.telehaptic.app.ui
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.role
+
+import androidx.compose.ui.semantics.selected
+
+import androidx.compose.ui.semantics.semantics
+
+import androidx.compose.ui.semantics.Role
+
+import androidx.compose.foundation.selection.toggleable
+
 import androidx.compose.material.icons.filled.MoreVert
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
@@ -74,7 +85,7 @@ fun HomeScreen(nav: Nav) {
     val ui by app.capsule.ui.collectAsState()
     val ctx = LocalContext.current
     var menu by remember { mutableStateOf(false) }
-    var refused by remember { mutableStateOf(false) }
+    var refused by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val askPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
         app.log.i("perm", res.toString())
         app.capsule.onUiResume()
@@ -107,7 +118,7 @@ fun HomeScreen(nav: Nav) {
                 // Without the permissions the first tap asks for them right away, then connects.
                 Capsule.Status.IDLE, Capsule.Status.NOT_FOUND, Capsule.Status.NO_PERMISSION -> Button(onClick = {
                     if (app.capsule.hasPermissions()) app.capsule.connect() else askPermissions.launch(permissions)
-                }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Connect the capsule") }
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Connect the capsule") }
                 Capsule.Status.CONNECTED, Capsule.Status.NO_DATA, Capsule.Status.RECONNECTING, Capsule.Status.CONNECTING ->
                     TextButton(onClick = { app.capsule.disconnect() }) { Text("Disconnect", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 else -> {}
@@ -216,8 +227,8 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, detailed:
         }
         Text(text, color = color, fontSize = 12.sp)
         Spacer(Modifier.width(10.dp))
-        Text("Share ›", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp,
-            modifier = Modifier.clickable { onShare() }.padding(horizontal = 4.dp, vertical = 8.dp))
+        Text("Share ›", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp,
+            modifier = Modifier.heightIn(min = 48.dp).clickable { onShare() }.padding(horizontal = 8.dp, vertical = 14.dp))
     }
     if (item?.state == Uploader.State.FAILED) Muted(item.message)
     }
@@ -278,7 +289,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                 Text("After the beep keep the hand still for 10 s: the capsule vibrates briefly five times.")
                 Text("After the second beep slowly turn the hand in all directions for 40 s, as if looking it over.")
             }
-            Kind.NO_MAGNET -> Section { Text("Take the magnet off the nail. The rest is as in Keys: touch the same phalanges as with the magnet.") }
+            Kind.NO_MAGNET -> Section { Text("Take the magnet off the nail. The rest is as in Keys: touch the same finger segments as with the magnet.") }
             else -> Section {
                 Text("One beep: touch and hold. Two beeps: release and relax the hand.")
                 Muted("The next key is shown and spoken in advance, during the rest.")
@@ -297,7 +308,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                             color = if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.background,
                             border = androidx.compose.foundation.BorderStroke(if (on) 2.dp else 1.dp,
                                 if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).semantics { selected = on; role = Role.RadioButton },
                         ) {
                             Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 PosePicture(p.code, Modifier.fillMaxWidth().height(84.dp))
@@ -310,13 +321,14 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                 }
             }
             Section {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().toggleable(value = rewear, role = Role.Switch) { rewear = it },
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Capsule just put on again")
                         Muted("Turn on if you took the capsule off and put it back on before this recording.")
                     }
                     Spacer(Modifier.width(12.dp))
-                    androidx.compose.material3.Switch(checked = rewear, onCheckedChange = { rewear = it })
+                    androidx.compose.material3.Switch(checked = rewear, onCheckedChange = null)
                 }
             }
         }
@@ -341,7 +353,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                 nav.go(Screen.Run)
             },
             enabled = ready && missing.isEmpty(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
         ) { Text("Start") }
     }
 }
@@ -358,7 +370,7 @@ fun RunScreen(nav: Nav) {
     val left = ((s.phaseEndsAt - now).coerceAtLeast(0) + 999) / 1000
 
     Page(if (s.kind == Kind.CALIBRATION) "Calibration" else "Recording", nav = null) {
-        if (!cap.status.linked) Text("Capsule disconnected. The recording stops if it is not back in 5 seconds.", color = Palette.bad)
+        if (!cap.status.linked) Text("Capsule lost. The recording stops if it is not back in 5 seconds.", color = Palette.bad)
 
         if (s.kind == Kind.CALIBRATION) {
             val (big, small) = when (s.phase) {
@@ -400,7 +412,7 @@ private fun StopButton(onStop: () -> Unit) {
     var ask by remember { mutableStateOf(false) }
     // The system back button asks the same question.
     androidx.activity.compose.BackHandler { ask = true }
-    OutlinedButton(onClick = { ask = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Stop", color = Palette.bad) }
+    OutlinedButton(onClick = { ask = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Stop", color = Palette.bad) }
     if (ask) androidx.compose.material3.AlertDialog(
         onDismissRequest = { ask = false },
         title = { Text("Stop the recording?") },
@@ -440,7 +452,7 @@ fun DoneScreen(nav: Nav) {
             if (r.samples == 0L) add("No data. Check the capsule link and record again.")
             if (r.lossShare > 0.02) add("Many samples lost (${f1(r.lossShare * 100)}%). Keep the phone closer to the hand, with nothing in between.")
             if (r.saturated > 0) add("A sensor saturated. If this repeats, choose a wider range in Diagnostics or a weaker magnet.")
-            if (r.disconnects > 0) add("The capsule disconnected ${r.disconnects} time(s) during the recording.")
+            if (r.disconnects > 0) add("The capsule was lost ${r.disconnects} time(s) during the recording.")
         }
         if (r.aborted) Muted("Stopped recordings are kept on the phone but left out of the analysis.")
         else if (issues.isEmpty() && r.error == null) Text("✓ Recording OK · ${minutes(r.durationS)}", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
@@ -481,19 +493,27 @@ fun DoneScreen(nav: Nav) {
     }
 }
 
-/** Without an English voice the training cues are beeps only: say so where it matters, with the way to fix it. */
+/**
+ * Without an English voice the cues are beeps only, and with the media volume down there is
+ * nothing at all: say so where it matters, with the way to fix it.
+ */
 @Composable
 fun VoiceWarning() {
     val app = App.get()
     val voice by app.cues.voice.collectAsState()
-    if (voice != "no_english" && voice != "error") return
+    var volume by remember { mutableStateOf(app.cues.volumeShare()) }
+    LaunchedEffect(Unit) { while (true) { volume = app.cues.volumeShare(); delay(1000) } }
     val ctx = LocalContext.current
-    Section("No voice for the cues") {
+    if (voice == "no_english" || voice == "error") Section("No voice for the cues") {
         Text(if (voice == "no_english") "The phone has no English text-to-speech voice, so key names are not spoken; training would be beeps only."
             else "Text-to-speech does not work on this phone, so key names are not spoken; training would be beeps only.", color = Palette.warn)
         OutlinedButton(onClick = {
             try { ctx.startActivity(Intent("com.android.settings.TTS_SETTINGS")) }
             catch (_: Exception) { ctx.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
         }, modifier = Modifier.fillMaxWidth()) { Text("Open text-to-speech settings") }
+    }
+    if (volume < 0.2) Section("Media volume is low") {
+        Text("Key names, beeps and spoken words use the media volume. At this level they are hard to hear with the phone away.", color = Palette.warn)
+        OutlinedButton(onClick = { app.cues.raiseVolume(); volume = app.cues.volumeShare() }, modifier = Modifier.fillMaxWidth()) { Text("Turn the volume up") }
     }
 }

@@ -27,10 +27,15 @@ bool imuBegin() {
 }
 
 bool imuRead(int16_t gyr[3], int16_t acc[3]) {
-  // OUTX_L_G (0x22) .. OUTZ_H_XL (0x2D): gyro x y z, then accel x y z, LSB first.
-  // One burst; the library itself relies on register auto-increment for 2-byte reads.
-  uint8_t b[12] = {0};
-  if (imu.readRegisterRegion(b, 0x22, 12) != 0) return false;
+  // OUTX_L_G (0x22) .. OUTZ_H_XL (0x2D): gyro x y z, then accel x y z, LSB first. One burst on
+  // Wire1 (the library's readRegisterRegion reports success even after a short read, so the
+  // count is checked here). Register auto-increment: IF_INC, on by default in CTRL3_C.
+  uint8_t b[12];
+  Wire1.beginTransmission(0x6A);
+  Wire1.write(0x22);
+  if (Wire1.endTransmission(false) != 0) return false;
+  if (Wire1.requestFrom((uint8_t)0x6A, (size_t)12) != 12) return false;
+  for (int i = 0; i < 12; i++) b[i] = Wire1.read();
   for (int i = 0; i < 3; i++) {
     gyr[i] = (int16_t)((uint16_t)b[2 * i] | ((uint16_t)b[2 * i + 1] << 8));
     acc[i] = (int16_t)((uint16_t)b[6 + 2 * i] | ((uint16_t)b[6 + 2 * i + 1] << 8));

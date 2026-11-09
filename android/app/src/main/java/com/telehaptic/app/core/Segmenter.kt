@@ -97,10 +97,12 @@ class Segmenter(var p: Params = Params()) {
         val stable = maxSd < p.stableUt
         lastStable = stable
         val r = rest ?: run {
-            if (stable) {
-                val keyLike = restGuard.any { dist(mean, it) < p.onUt }
-                if (!keyLike || (guardSinceNs >= 0 && tNs - guardSinceNs > GUARD_MS * 1_000_000L)) rest = mean.copyOf()
-                else if (guardSinceNs < 0) guardSinceNs = tNs
+            val keyLike = stable && restGuard.any { dist(mean, it) < p.onUt }
+            when {
+                !stable -> guardSinceNs = -1                      // the still period near a key must be unbroken
+                !keyLike -> rest = mean.copyOf()
+                guardSinceNs < 0 -> guardSinceNs = tNs
+                tNs - guardSinceNs > GUARD_MS * 1_000_000L -> rest = mean.copyOf()
             }
             return null
         }

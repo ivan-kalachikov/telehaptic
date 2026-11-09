@@ -123,4 +123,15 @@ class ModelTest {
         val d = T9.code("understa")!!
         assertEquals(listOf("understa"), t9.candidates(d))
     }
+
+    @Test fun eraseAfterSpaceContinuesTheWord() {
+        val t9 = T9(sequenceOf("hello" to 100L, "hell" to 80L, "help" to 60L, "world" to 50L))
+        val t = Typing(t9)
+        for (k in "43556" + "0") t.key(k.toString())
+        assertEquals("hello ", t.display())
+        t.key("#"); assertEquals("hello", t.display())        // the space
+        t.key("#"); assertEquals("hell", t.display())         // back into the word, last letter gone
+        t.key("#"); t.key("7"); assertEquals("help", t.display())   // continues the same word
+        t.key("0"); assertEquals("help ", t.display())
+    }
 }

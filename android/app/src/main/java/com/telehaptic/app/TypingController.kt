@@ -34,13 +34,12 @@ class TypingController(private val app: App) {
 
     init {
         app.capsule.addListener(object : Capsule.Listener {
-            override fun onLink(connected: Boolean) = linkChange(connected)
-            override fun onStall(stalled: Boolean) = linkChange(!stalled)
+            override fun onUsable(usable: Boolean) = linkChange(usable)
         })
     }
     private fun linkChange(up: Boolean) {
         if (!active) return
-        if (up) app.cues.say("Capsule is back") else app.cues.alert("Capsule lost")
+        if (up) app.cues.say("Capsule is back") else app.cues.alert("Capsule lost")   // once per loss (onUsable)
     }
 
     private var typing: Typing? = null
@@ -76,6 +75,7 @@ class TypingController(private val app: App) {
         if (!app.training.active) {
             app.brain.armSegmenterFreshRest()   // rest is measured again: the capsule may sit differently now
             app.engine.claim(this, Engine.Mode.TYPING) { onTouch(it) }
+            if (app.capsule.ui.value.status == Capsule.Status.CONNECTED) app.cues.say("Typing. Hand relaxed, thumb away from the fingers for a second.")
         }
         publish()
     }
@@ -121,15 +121,30 @@ class TypingController(private val app: App) {
      */
     private fun speak(t: Typing, k: String) {
         val word = t.currentWord()
+        val before = t.display()
         t.key(k)
         if (!app.prefs.speakTyping) return
         when (k) {
-            "0" -> app.cues.say(word.ifEmpty { "space" })
-            "1" -> app.cues.say(if (word.isEmpty()) "full stop" else "$word, full stop")
-            "*" -> app.cues.say(t.currentWord().ifEmpty { "no other word" })
-            "#" -> app.cues.say("erase")
+            "0" -> app.cues.say(spoken(word).ifEmpty { "space" })
+            "1" -> app.cues.say(if (word.isEmpty()) "full stop" else "${spoken(word)}, full stop")
+            "*" -> app.cues.say(spoken(t.currentWord()).ifEmpty { "no other word" })
+            "#" -> {
+                // Say what is left, so a correction can be followed by ear.
+                val erased = before.lastOrNull()
+                val now = t.currentWord()
+                app.cues.say(when {
+                    before.isEmpty() -> "nothing to erase"
+                    erased == ' ' && now.isEmpty() -> "space erased"
+                    erased == '.' && now.isEmpty() -> "full stop erased"
+                    now.isNotEmpty() -> spoken(now)
+                    else -> "word erased"
+                })
+            }
         }
     }
+
+    /** A word as speech; a digit string with no word for it is read digit by digit, not as a number. */
+    private fun spoken(w: String) = if (w.isNotEmpty() && w.all { it.isDigit() }) w.toList().joinToString(" ") else w
 
     /** Typing by tapping on the screen (works without the capsule; no corrections recorded). */
     fun screenKey(k: String) {
