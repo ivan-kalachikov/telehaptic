@@ -134,4 +134,42 @@ class ModelTest {
         t.key("#"); t.key("7"); assertEquals("help", t.display())   // continues the same word
         t.key("0"); assertEquals("help ", t.display())
     }
+
+    @Test fun softT9ReadsAMisreadKeyAsTheWordNeeds() {
+        val t9 = T9(sequenceOf("hello" to 1000L, "world" to 500L))
+        val sure = { k: String -> mapOf(k to 1.0) }
+        val rate = 1.0 / 26   // 24 of 24 unseen taps right
+        // "hello" = 43556; the third touch is read as 4, and the model is sure of it.
+        val t = Typing(t9)
+        for (k in listOf("4", "3", "4", "5", "6")) t.key(k, sure(k), rate)
+        assertEquals("43456", t.digits)
+        assertEquals("hello", t.currentWord())
+        t.key("#")
+        assertEquals("4345", t.digits)                 // erase takes the last press away
+        // Two misread keys in one word are not overruled: the keys are shown as typed.
+        val two = Typing(t9)
+        for (k in listOf("4", "3", "4", "4", "6")) two.key(k, sure(k), rate)
+        assertEquals("43446", two.currentWord())
+        // No test result (error rate 0), or a tap on the screen: the keys are certain.
+        val noTest = Typing(t9)
+        for (k in listOf("4", "3", "4", "5", "6")) noTest.key(k, sure(k), 0.0)
+        assertEquals("43456", noTest.currentWord())
+        val screen = Typing(t9)
+        for (k in listOf("4", "3", "4", "5", "6")) screen.key(k)
+        assertEquals("43456", screen.currentWord())
+    }
+
+    @Test fun softT9WeighsDoubtAgainstFrequency() {
+        // "ugh" = 844, "the" = 843.
+        val farMoreCommon = T9(sequenceOf("the" to 1_000_000L, "ugh" to 100L))
+        val tenTimes = T9(sequenceOf("the" to 1000L, "ugh" to 100L))
+        fun type(t9: T9, last: Map<String, Double>) = Typing(t9).apply {
+            key("8", mapOf("8" to 1.0), 1.0 / 26); key("4", mapOf("4" to 1.0), 1.0 / 26); key("4", last, 1.0 / 26)
+        }
+        // The model is sure of the last 4: only a far more common word overrules it. Both stay in the list.
+        assertEquals(listOf("the", "ugh"), type(farMoreCommon, mapOf("4" to 1.0)).candidates())
+        assertEquals(listOf("ugh", "the"), type(tenTimes, mapOf("4" to 1.0)).candidates())
+        // The model hesitates between 4 and 3: now ten times as common is enough.
+        assertEquals(listOf("the", "ugh"), type(tenTimes, mapOf("4" to 0.6, "3" to 0.4)).candidates())
+    }
 }

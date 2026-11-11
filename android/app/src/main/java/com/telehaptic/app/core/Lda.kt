@@ -43,7 +43,9 @@ class Lda private constructor(
     /** Per key: farther than this from the key's centre = "not this key" (see [rejectD2]). */
     private val reject = DoubleArray(keys.size) { rejectD2(features.dims, counts[it], dof) }
 
-    data class Result(val key: String, val second: String, val posterior: Double, val secondPosterior: Double, val d2: Double, val accepted: Boolean)
+    /** [probs]: the posterior of every key of the model (they sum to 1); [posterior] is that of [key]. */
+    data class Result(val key: String, val second: String, val posterior: Double, val secondPosterior: Double, val d2: Double, val accepted: Boolean,
+                      val probs: Map<String, Double> = emptyMap())
 
     fun classify(x6: DoubleArray): Result {
         val x = features.of(x6)
@@ -57,7 +59,9 @@ class Lda private constructor(
         for (v in d2) sum += exp(-(v - m) / 2)
         val pBest = 1.0 / sum
         val pSecond = exp(-(d2[second] - m) / 2) / sum
-        return Result(keys[best], keys[second], pBest, pSecond, d2[best], d2[best] <= reject[best])
+        val probs = HashMap<String, Double>()
+        for (k in keys.indices) probs[keys[k]] = exp(-(d2[k] - m) / 2) / sum
+        return Result(keys[best], keys[second], pBest, pSecond, d2[best], d2[best] <= reject[best], probs)
     }
 
     private fun mahal(x: DoubleArray, mu: DoubleArray): Double {

@@ -9,8 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 /**
- * Typing test: detected touches go through the model into T9. Each accepted touch clicks
- * the motor. "Erase, then another key" right away is remembered as a possible correction.
+ * Typing test: detected touches go through the model into T9, each letter touch with the model's
+ * probabilities for all keys, so the word list can overrule a doubtful touch (soft T9, see
+ * [T9.decode]). Each accepted touch clicks the motor. "Erase, then another key" right away is remembered as a possible correction.
  */
 class TypingController(private val app: App) {
     data class Ui(
@@ -107,7 +108,7 @@ class TypingController(private val app: App) {
             erased = null
         }
         lastTouch = r.key to d.x
-        speak(t, r.key)
+        speak(t, r.key, r.probs)
         _ui.update { it.copy(
             lastKey = r.key, flashUntil = SystemClock.elapsedRealtime() + 450,
             posterior = r.posterior, second = r.second, secondPosterior = r.secondPosterior,
@@ -119,10 +120,13 @@ class TypingController(private val app: App) {
      * Applies a key and says what changed, so the text can be followed without looking: the word
      * on space and full stop, the new variant on *, "erase" on #. Letter keys stay silent (the click is enough).
      */
-    private fun speak(t: Typing, k: String) {
+    private fun speak(t: Typing, k: String, probs: Map<String, Double>) {
         val word = t.currentWord()
         val before = t.display()
-        t.key(k)
+        val keys = t.digits
+        t.key(k, probs, app.brain.keyErrorRate)
+        // For checking later how often the word list overrules the model, and whether it was right.
+        if ((k == "0" || k == "1") && word.isNotEmpty() && (T9.code(word) ?: word) != keys) app.log.i("typing", "word '$word' overrules the keys $keys")
         if (!app.prefs.speakTyping) return
         when (k) {
             "0" -> app.cues.say(spoken(word).ifEmpty { "space" })
