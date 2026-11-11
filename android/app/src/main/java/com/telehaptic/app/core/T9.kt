@@ -118,6 +118,16 @@ class Typing(private val t9: T9) {
     fun display() = text.toString() + currentWord()
 
     /**
+     * Letters of the current word whose key is not the most likely key of their press: where
+     * the word list overruled the model. Positions in the word, from 0.
+     */
+    fun corrected(): List<Int> {
+        val code = T9.code(currentWord()) ?: return emptyList()
+        val d = digits
+        return code.indices.filter { it < d.length && code[it] != d[it] }
+    }
+
+    /**
      * [probs]: how likely each key is for this press, from the model; null = certain (a tap on
      * the screen). [errorRate]: how often the model's first choice was wrong on touches it had
      * not seen. That share of the probability is spread evenly over all 12 keys, so the model is

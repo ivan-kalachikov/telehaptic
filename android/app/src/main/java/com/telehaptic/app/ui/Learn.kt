@@ -359,7 +359,17 @@ fun TypingScreen(nav: Nav) {
         if (u.dictError) Text("The word list could not be loaded: the digits are shown as typed, without words. Details in Logs.", color = Palette.warn)
         else if (!u.ready) Muted("Loading the dictionary…")
         Section {
-            Text(u.text.ifEmpty { " " }, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
+            // Letters the word list put in place of the model's key: underlined, in the warning colour.
+            val shown = androidx.compose.ui.text.buildAnnotatedString {
+                append(u.text.ifEmpty { " " })
+                for (i in u.corrected) {
+                    val at = u.wordStart + i
+                    if (at in u.text.indices) addStyle(androidx.compose.ui.text.SpanStyle(color = Palette.warn,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline), at, at + 1)
+                }
+            }
+            Text(shown, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
+            if (u.corrected.isNotEmpty()) Muted("Underlined: corrected by the word list. Not this word? * gives the others.")
         }
         if (u.candidates.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

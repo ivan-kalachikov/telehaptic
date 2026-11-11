@@ -27,6 +27,9 @@ class TypingController(private val app: App) {
         val corrections: Int = 0,
         val ready: Boolean = false,
         val dictError: Boolean = false,
+        /** Where the current word starts in [text], and its letters the word list put in place of the model's key. */
+        val wordStart: Int = 0,
+        val corrected: List<Int> = emptyList(),
     )
 
     @Volatile private var t9: T9? = null
@@ -124,14 +127,18 @@ class TypingController(private val app: App) {
         val word = t.currentWord()
         val before = t.display()
         val keys = t.digits
-        t.key(k, probs, app.brain.keyErrorRate)
+        val fixed = t.corrected().isNotEmpty()
+        // Correction off: the model's first choice is taken as certain, i.e. classic T9.
+        t.key(k, probs, if (app.prefs.correctKeys) app.brain.keyErrorRate else 0.0)
         // For checking later how often the word list overrules the model, and whether it was right.
-        if ((k == "0" || k == "1") && word.isNotEmpty() && (T9.code(word) ?: word) != keys) app.log.i("typing", "word '$word' overrules the keys $keys")
+        if ((k == "0" || k == "1") && fixed) app.log.i("typing", "word '$word' overrules the keys $keys")
         if (!app.prefs.speakTyping) return
+        // A word that is not what the keys said is announced as corrected, so it can be checked by ear.
+        val said = spoken(word) + if (fixed) ", corrected" else ""
         when (k) {
-            "0" -> app.cues.say(spoken(word).ifEmpty { "space" })
-            "1" -> app.cues.say(if (word.isEmpty()) "full stop" else "${spoken(word)}, full stop")
-            "*" -> app.cues.say(spoken(t.currentWord()).ifEmpty { "no other word" })
+            "0" -> app.cues.say(said.ifEmpty { "space" })
+            "1" -> app.cues.say(if (word.isEmpty()) "full stop" else "$said, full stop")
+            "*" -> app.cues.say(spoken(t.currentWord()).ifEmpty { "no other word" } + if (t.corrected().isNotEmpty()) ", corrected" else "")
             "#" -> {
                 // Say what is left, so a correction can be followed by ear.
                 val erased = before.lastOrNull()
@@ -183,6 +190,8 @@ class TypingController(private val app: App) {
             corrections = corrections.size,
             ready = t9 != null,
             dictError = dictFailed,
+            wordStart = (t?.display()?.length ?: 0) - (t?.currentWord()?.length ?: 0),
+            corrected = t?.corrected() ?: emptyList(),
         ) }
     }
 

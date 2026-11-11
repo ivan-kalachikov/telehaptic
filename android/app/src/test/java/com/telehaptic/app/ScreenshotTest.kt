@@ -162,7 +162,8 @@ class ScreenshotTest {
         rule.mainClock.autoAdvance = false
         rule.setContent { AppTheme { TypingScreen(nav(Screen.Home, Screen.Typing)) } }
         app.typing.showForPreview(TypingController.Ui(text = "hello how are you", candidates = listOf("you", "yo", "zp"), variant = 0,
-            lastKey = "8", flashUntil = Long.MAX_VALUE, posterior = 0.82, second = "5", secondPosterior = 0.11, ready = true))
+            lastKey = "8", flashUntil = Long.MAX_VALUE, posterior = 0.82, second = "5", secondPosterior = 0.11, ready = true,
+            wordStart = 14, corrected = listOf(1)))   // "you": the o came from the word list
         shot("13-typing")
     }
 }

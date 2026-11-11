@@ -144,6 +144,7 @@ class ModelTest {
         for (k in listOf("4", "3", "4", "5", "6")) t.key(k, sure(k), rate)
         assertEquals("43456", t.digits)
         assertEquals("hello", t.currentWord())
+        assertEquals(listOf(2), t.corrected())          // the third letter is the word list's, not the model's
         t.key("#")
         assertEquals("4345", t.digits)                 // erase takes the last press away
         // Two misread keys in one word are not overruled: the keys are shown as typed.
@@ -154,6 +155,7 @@ class ModelTest {
         val noTest = Typing(t9)
         for (k in listOf("4", "3", "4", "5", "6")) noTest.key(k, sure(k), 0.0)
         assertEquals("43456", noTest.currentWord())
+        assertEquals(emptyList<Int>(), noTest.corrected())
         val screen = Typing(t9)
         for (k in listOf("4", "3", "4", "5", "6")) screen.key(k)
         assertEquals("43456", screen.currentWord())
