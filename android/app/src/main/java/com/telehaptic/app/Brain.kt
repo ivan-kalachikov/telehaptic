@@ -50,6 +50,14 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
 
     val model get() = engine.model
 
+    /**
+     * How often the model's first choice was wrong on quick taps it had not seen (the last full
+     * training or re-fit), by the rule of succession (wrong + 1) / (taps + 2): not zero even after
+     * a perfect test. Typing spreads this share of each touch over the other keys, so the word
+     * list can overrule a touch. 0 when there is no test result: touches are then taken as certain.
+     */
+    val keyErrorRate: Double get() = _summary.value.let { if (it.total <= 0) 0.0 else (it.total - it.correct + 1.0) / (it.total + 2.0) }
+
     /** A damaged line (cut off by a crash) is skipped, not fatal. */
     fun touches(): List<Touch> = if (!touchFile.exists()) emptyList() else touchFile.readLines().drop(1).mapNotNull { l ->
         val f = l.split(',')

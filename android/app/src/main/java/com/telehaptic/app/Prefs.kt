@@ -33,6 +33,10 @@ class Prefs(ctx: Context) {
     var speakTyping: Boolean
         get() = p.getBoolean("speak_typing", true)
         set(v) = p.edit().putBoolean("speak_typing", v).apply()
+    /** Typing: the word list may overrule a doubtful touch (soft T9). Off = classic T9 on the model's first choice. */
+    var correctKeys: Boolean
+        get() = p.getBoolean("correct_keys", true)
+        set(v) = p.edit().putBoolean("correct_keys", v).apply()
     var autoUpload: Boolean
         get() = p.getBoolean("auto_upload", true)
         set(v) = p.edit().putBoolean("auto_upload", v).apply()

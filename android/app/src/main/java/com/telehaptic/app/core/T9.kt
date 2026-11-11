@@ -1,34 +1,74 @@
 package com.telehaptic.app.core
 
+import kotlin.math.ln
+
 /**
  * T9 for English: keys 2-9 carry letters as on phone keypads (ITU E.161), words come from a
  * frequency list. 0 = space (accepts the word), 1 = full stop, * = next variant of the word,
  * # = erase.
+ *
+ * A press may be uncertain ("soft T9"): it is 8 probabilities, one per letter key. A word's
+ * keys are compared with the presses, so the word list can overrule a press the model was
+ * unsure about, or one it got wrong. A press that is certain is 1 for its key and 0 for the rest.
  */
 class T9(words: Sequence<Pair<String, Long>>) {
-    private val byCode = HashMap<String, MutableList<Pair<String, Long>>>()
-    private val byPrefix = HashMap<String, MutableList<Pair<String, Long>>>()
+    private class Entry(val word: String, val keys: ByteArray, val lnFreq: Double)
+
+    /** Words by length, each list in the order of the word list. */
+    private val byLength = ArrayList<ArrayList<Entry>>()
 
     init {
         for ((w, f) in words) {
             val code = code(w) ?: continue
-            byCode.getOrPut(code) { ArrayList() }.add(w to f)
-            for (len in 1..minOf(code.length - 1, 6)) byPrefix.getOrPut(code.substring(0, len)) { ArrayList() }.add(w to f)
+            if (code.isEmpty()) continue
+            while (byLength.size <= code.length) byLength.add(ArrayList())
+            byLength[code.length].add(Entry(w, ByteArray(code.length) { (code[it] - '2').toByte() }, ln(maxOf(f, 1L).toDouble())))
         }
-        for (l in byCode.values) l.sortByDescending { it.second }
-        for ((k, l) in byPrefix) { l.sortByDescending { it.second }; if (l.size > 20) byPrefix[k] = l.subList(0, 20).toMutableList() }
     }
 
-    /** Words for a digit string: exact matches by frequency; if none, the beginnings of longer words. */
-    fun candidates(digits: String, max: Int = 6): List<String> {
-        if (digits.isEmpty()) return emptyList()
-        val exact = byCode[digits]?.map { it.first } ?: emptyList()
-        if (exact.isNotEmpty()) return exact.take(max)
-        // Beginnings of longer words. The prefix index holds up to 6 digits; beyond that the
-        // whole list is searched (about 47 thousand codes, about a millisecond).
-        val pre = if (digits.length <= 6) byPrefix[digits] ?: emptyList()
-        else byCode.entries.filter { it.key.startsWith(digits) }.flatMap { it.value }.sortedByDescending { it.second }.take(20)
-        return pre.map { it.first.take(digits.length) }.distinct().take(max).ifEmpty { listOf(digits) }
+    /** Words for a digit string, every digit taken as certain. */
+    fun candidates(digits: String, max: Int = 6): List<String> =
+        if (digits.any { it !in '2'..'9' }) listOf(digits) else decode(digits.map { certain(it) }, max)
+
+    /**
+     * Words for a series of presses, best first.
+     *
+     * Cost of a word = sum over the presses of ln p(most likely key) - ln p(the word's key):
+     * 0 if the word agrees with every press, large if it contradicts a press the model was sure
+     * of. A word fits if its cost is no more than the dearest single change of one press in this
+     * series. So the word list may overrule one press per word, or a few doubtful ones, never more.
+     *
+     * - Fitting words of exactly this length, by ln(frequency) - cost.
+     * - If there are none: the beginnings of longer words, the same way.
+     * - If there are none either: the most likely keys as digits.
+     */
+    fun decode(presses: List<DoubleArray>, max: Int = 6): List<String> {
+        val n = presses.size
+        if (n == 0) return emptyList()
+        val lp = Array(n) { i -> DoubleArray(KEYS) { k -> ln(presses[i][k]) } }   // ln 0 = -infinity: that key is ruled out
+        val best = DoubleArray(n) { i -> lp[i].max() }
+        var budget = 0.0
+        for (i in 0 until n) for (k in 0 until KEYS) { val c = best[i] - lp[i][k]; if (c.isFinite() && c > budget) budget = c }
+        budget += 1e-9
+
+        /** Cost of the first n keys of [e], or infinity as soon as it is over the budget. */
+        fun cost(e: Entry): Double {
+            var c = 0.0
+            for (i in 0 until n) { c += best[i] - lp[i][e.keys[i].toInt()]; if (!(c <= budget)) return Double.POSITIVE_INFINITY }
+            return c
+        }
+
+        val found = LinkedHashMap<String, Double>()   // shown text -> score
+        for (e in byLength.getOrNull(n) ?: emptyList()) { val c = cost(e); if (c.isFinite()) found[e.word] = e.lnFreq - c }
+        if (found.isEmpty()) for (len in n + 1 until byLength.size) for (e in byLength[len]) {
+            val c = cost(e)
+            if (!c.isFinite()) continue
+            val shown = e.word.substring(0, n)
+            val score = e.lnFreq - c
+            if (score > (found[shown] ?: Double.NEGATIVE_INFINITY)) found[shown] = score
+        }
+        if (found.isEmpty()) return listOf(digits(presses))
+        return found.entries.sortedByDescending { it.value }.take(max).map { it.key }
     }
 
     companion object {
@@ -37,6 +77,15 @@ class T9(words: Sequence<Pair<String, Long>>) {
             '6' to "mno", '7' to "pqrs", '8' to "tuv", '9' to "wxyz",
         )
         private val DIGIT = HashMap<Char, Char>().apply { for ((d, s) in LETTERS) for (c in s) put(c, d) }
+
+        /** Letter keys: 2..9. */
+        const val KEYS = 8
+
+        /** A press that is certainly the letter key [digit] ('2'..'9'). */
+        fun certain(digit: Char) = DoubleArray(KEYS) { if (it == digit - '2') 1.0 else 0.0 }
+
+        /** The most likely key of each press, as digits. */
+        fun digits(presses: List<DoubleArray>) = presses.joinToString("") { p -> ('2' + p.indices.maxByOrNull { p[it] }!!).toString() }
 
         fun code(word: String): String? {
             val sb = StringBuilder()
@@ -51,40 +100,69 @@ class T9(words: Sequence<Pair<String, Long>>) {
     }
 }
 
-/** Typed text with the word being composed from digits. */
+/** Typed text with the word being composed from presses. */
 class Typing(private val t9: T9) {
     var text = StringBuilder(); private set
-    var digits = ""; private set
+    /** The presses of the word being composed: 8 probabilities each, see [T9.decode]. */
+    private val presses = ArrayList<DoubleArray>()
     var variant = 0; private set
+    private var found: List<String>? = null   // candidates for the current presses, until they change
 
-    fun candidates() = t9.candidates(digits)
+    /** The most likely key of each press of the current word. */
+    val digits get() = T9.digits(presses)
+
+    fun candidates(): List<String> = found ?: t9.decode(presses).also { found = it }
     fun currentWord(): String = candidates().let { if (it.isEmpty()) "" else it[variant % it.size] }
 
     /** What the screen shows: accepted text plus the current word. */
     fun display() = text.toString() + currentWord()
 
-    fun key(k: String) {
+    /**
+     * Letters of the current word whose key is not the most likely key of their press: where
+     * the word list overruled the model. Positions in the word, from 0.
+     */
+    fun corrected(): List<Int> {
+        val code = T9.code(currentWord()) ?: return emptyList()
+        val d = digits
+        return code.indices.filter { it < d.length && code[it] != d[it] }
+    }
+
+    /**
+     * [probs]: how likely each key is for this press, from the model; null = certain (a tap on
+     * the screen). [errorRate]: how often the model's first choice was wrong on touches it had
+     * not seen. That share of the probability is spread evenly over all 12 keys, so the model is
+     * never trusted more than its own test allows. 0 = the key is taken as certain.
+     */
+    fun key(k: String, probs: Map<String, Double>? = null, errorRate: Double = 0.0) {
         when (k) {
-            in "2".."9" -> { digits += k; variant = 0 }
+            in "2".."9" -> {
+                presses.add(
+                    if (probs == null || errorRate <= 0.0) T9.certain(k[0])
+                    else DoubleArray(T9.KEYS) { (1 - errorRate) * (probs[('2' + it).toString()] ?: 0.0) + errorRate / Keys.ALL.size })
+                changed()
+            }
             "0" -> { commit(); text.append(' ') }
             "1" -> { commit(); text.append('.') }
-            "*" -> if (digits.isNotEmpty()) variant++
+            "*" -> if (presses.isNotEmpty()) variant++
             "#" -> erase()
         }
     }
 
+    private fun changed() { variant = 0; found = null }
+
     private fun commit() {
         text.append(currentWord())
-        digits = ""; variant = 0
+        presses.clear(); changed()
     }
 
     /**
-     * Erases one key press. Inside a word: its last digit. After a space or a full stop: that
-     * character. Right after a committed word: the word goes back into digits (minus its last
-     * one), so the next keys continue it instead of starting a new word glued to it.
+     * Erases one key press. Inside a word: its last press. After a space or a full stop: that
+     * character. Right after a committed word: the word goes back into presses (minus its last
+     * one, each taken as certain: it is the word on the screen that is being edited), so the
+     * next keys continue it instead of starting a new word glued to it.
      */
     fun erase() {
-        if (digits.isNotEmpty()) { digits = digits.dropLast(1); variant = 0; return }
+        if (presses.isNotEmpty()) { presses.removeAt(presses.size - 1); changed(); return }
         if (text.isEmpty()) return
         val last = text[text.length - 1]
         val code = code(last.toString())
@@ -94,14 +172,14 @@ class Typing(private val t9: T9) {
         val word = text.substring(start)
         text.setLength(start)
         val wordDigits = if (word.all { it.isDigit() }) word else T9.code(word) ?: word
-        digits = wordDigits.dropLast(1)
-        val c = candidates()
-        variant = c.indexOf(word.dropLast(1)).coerceAtLeast(0)
+        for (d in wordDigits.dropLast(1)) if (d in '2'..'9') presses.add(T9.certain(d))
+        changed()
+        variant = candidates().indexOf(word.dropLast(1)).coerceAtLeast(0)
     }
 
     private fun code(s: String) = T9.code(s)?.takeIf { s.isNotEmpty() }
 
-    fun clear() { text = StringBuilder(); digits = ""; variant = 0 }
+    fun clear() { text = StringBuilder(); presses.clear(); changed() }
 
     fun choose(i: Int) { val c = candidates(); if (i in c.indices) { variant = i } }
 }

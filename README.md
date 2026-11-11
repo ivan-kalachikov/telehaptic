@@ -9,6 +9,7 @@ Palm side, fingers pointing right:
 - **Finger = row:** index 1 2 3, middle 4 5 6, ring 7 8 9, little * 0 #.
 - **Phalanx = column**, from the palm to the tip, so the keys sit as on a phone keypad.
 - **Letters** as on phone keys (T9). 1 = full stop, 0 = space, * = next word, # = erase.
+- **Soft T9:** every letter touch reaches the word list with the model's probabilities for all keys, not as one fixed key. A far more common word can overrule one doubtful touch per word; the other readings stay in the list under *. Corrected letters are underlined and the word is said with "corrected"; Settings → "Correct keys by the word list" turns it off (classic T9).
 - **N:** the magnet on the thumbnail.
 - **S1, S2 (dashed):** the two magnetometers on the back of the hand, behind the knuckles of the index and little fingers. The bar is the distance between them that the app asks for.
 

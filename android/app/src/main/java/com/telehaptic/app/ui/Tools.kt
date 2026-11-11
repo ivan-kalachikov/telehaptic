@@ -168,6 +168,7 @@ fun SettingsScreen(nav: Nav) {
     var token by remember { mutableStateOf(p.githubToken) }
     var auto by remember { mutableStateOf(p.autoUpload) }
     var speak by remember { mutableStateOf(p.speakTyping) }
+    var correct by remember { mutableStateOf(p.correctKeys) }
     var check by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     if (confirm.isNotEmpty()) androidx.compose.material3.AlertDialog(
@@ -195,6 +196,14 @@ fun SettingsScreen(nav: Nav) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Switch(checked = speak, onCheckedChange = null)
+            }
+            Row(Modifier.fillMaxWidth().toggleable(value = correct, role = Role.Switch) { correct = it; p.correctKeys = it }, verticalAlignment = Alignment.CenterVertically) {
+                Column1(Modifier.weight(1f)) {
+                    Text("Correct keys by the word list")
+                    Muted("A far more common word may overrule one doubtful touch. Corrected letters are underlined and the word is said with \"corrected\". Off: each touch is taken as the model read it.")
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(checked = correct, onCheckedChange = null)
             }
         }
         Section("Magnet and sensors") { MagnetFields() }
