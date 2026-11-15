@@ -109,6 +109,7 @@ PONG 123456 1650000
   - `<where>` is `main` (the main bus) or `chN` (a multiplexer channel);
   - variants: address and chip, `UNSUPPORTED`, `UNKNOWN`, `OTHER <addresses>`, `EMPTY HINT_PULLUPS`, `MUX_ERROR`;
   - `HINT_PULLUPS` is written for empty channels 0–2; the app shows "Channel N: sensor does not answer. Check the SDN/SCN wires and the 4.7 kΩ pull-ups to 3.3 V". Channel 2 is the spare.
+- `SCAN SWAPPED sda=D5 scl=D4`: nothing answered on D4 = SDA, D5 = SCL, but something did with the two swapped, so the wires are crossed. The capsule keeps working on the swapped pins (the nRF52 I2C peripheral can use any pins). Comes before `SCAN begin`.
 - `SCAN BUS_STUCK sda=0 scl=1`: before the scan SDA or SCL is held low. Nothing is sent on the bus then: the core's I2C driver waits without a timeout and would hang. Cause: wiring, a short to GND or missing pull-ups.
 - `CLOCK FAIL`: RTC2 is not counting; there will be no samples.
 - In `CFG` each magnetometer has its chip, place and LSB per gauss.

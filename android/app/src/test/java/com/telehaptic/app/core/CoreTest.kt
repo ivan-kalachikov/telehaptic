@@ -87,6 +87,8 @@ class CoreTest {
 
     @Test fun scanTexts() {
         assertTrue(ScanText.describe("SCAN BUS_STUCK sda=0 scl=1").contains("SDA"))
+        assertTrue(ScanText.problem("SCAN SWAPPED sda=D5 scl=D4")!!.contains("crossed"))
+        assertTrue(ScanText.describe("SCAN main EMPTY HINT_PULLUPS").contains("D4 goes to SDA"))
         assertTrue(ScanText.describe("SCAN ch3 OTHER 0x48").contains("0x48"))
         assertNotNull(ScanText.problem("SCAN main 0x1E HMC5883L UNSUPPORTED"))
         assertNull(ScanText.problem("SCAN ch0 0x2C QMC5883P mag1"))

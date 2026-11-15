@@ -33,6 +33,9 @@ static const uint8_t HMC_ADDR = 0x1E;        // [HMC]
 static uint8_t muxCurrent = 0xFE;            // unknown
 // Devices on the main bus stay visible on every channel; they are skipped there.
 static bool onMain[128];
+// The main bus pins as Arduino numbers. Normally D4 = SDA, D5 = SCL; swapped when the scan finds
+// the wires crossed (the nRF52 I2C peripheral can use any pins, so the capsule works either way).
+static uint8_t pinSda = PIN_WIRE_SDA, pinScl = PIN_WIRE_SCL;
 
 const char* chipName(ChipType t) {
   switch (t) {
@@ -177,25 +180,42 @@ static bool busIdleHigh(char* line, size_t len) {
   // release the peripheral first (TwoWire::end disables TWIM in the nRF52 core).
   Wire.end();
   // Weak internal pull-ups, so lines with nothing connected do not float low.
-  pinMode(PIN_WIRE_SDA, INPUT_PULLUP);
-  pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
+  pinMode(pinSda, INPUT_PULLUP);
+  pinMode(pinScl, INPUT_PULLUP);
   delayMicroseconds(50);
-  int sda = digitalRead(PIN_WIRE_SDA), scl = digitalRead(PIN_WIRE_SCL);
+  int sda = digitalRead(pinSda), scl = digitalRead(pinScl);
   if (sda == LOW && scl == HIGH) {
     // A slave stuck mid-byte holds SDA: clock SCL up to 9 times until it lets go (standard I2C recovery).
-    for (int i = 0; i < 9 && digitalRead(PIN_WIRE_SDA) == LOW; i++) {
-      pinMode(PIN_WIRE_SCL, OUTPUT);
-      digitalWrite(PIN_WIRE_SCL, LOW);
+    for (int i = 0; i < 9 && digitalRead(pinSda) == LOW; i++) {
+      pinMode(pinScl, OUTPUT);
+      digitalWrite(pinScl, LOW);
       delayMicroseconds(5);
-      pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
+      pinMode(pinScl, INPUT_PULLUP);
       delayMicroseconds(5);
     }
-    sda = digitalRead(PIN_WIRE_SDA);
+    sda = digitalRead(pinSda);
   }
+  Wire.setPins(pinSda, pinScl);
   Wire.begin();  // gives the pins back to the I2C peripheral
   Wire.setClock(I2C_HZ);
   snprintf(line, len, "SCAN BUS_STUCK sda=%d scl=%d", sda, scl);
   return sda == HIGH && scl == HIGH;
+}
+
+// True if any address answers on the bus as it is now.
+static bool anyAnswers() {
+  for (uint8_t a = 0x08; a < 0x78; a++) if (probe(a)) return true;
+  return false;
+}
+
+// Puts the I2C peripheral on the given pins (Arduino numbers). TwoWire::setPins takes effect at begin().
+static void usePins(uint8_t sda, uint8_t scl) {
+  Wire.end();
+  pinSda = sda;
+  pinScl = scl;
+  Wire.setPins(sda, scl);
+  Wire.begin();
+  Wire.setClock(I2C_HZ);
 }
 
 void sensorsScan(void (*emit)(const char*)) {
@@ -210,6 +230,15 @@ void sensorsScan(void (*emit)(const char*)) {
     return;
   }
   muxPresent = probe(MUX_ADDR);
+  if (!muxPresent && !anyAnswers()) {
+    // Nothing answers: maybe SDA and SCL are crossed somewhere (continuity and voltages look
+    // right then). Try the other way round; keep it if anything answers, else go back.
+    uint8_t s = pinSda, c = pinScl;
+    usePins(c, s);
+    if (anyAnswers()) muxPresent = probe(MUX_ADDR);
+    else usePins(s, c);
+  }
+  if (pinSda != PIN_WIRE_SDA) emit("SCAN SWAPPED sda=D5 scl=D4");
   snprintf(line, sizeof line, "SCAN begin mux=%s", muxPresent ? "yes" : "no");
   emit(line);
 
