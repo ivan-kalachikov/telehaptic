@@ -363,7 +363,12 @@ fun TypingScreen(nav: Nav, test: Boolean = false) {
         Section {
             // Typing test: the phrase right above what is typed, so both fit on the screen with the keypad.
             if (test) when {
-                u.testDone -> Text("Test done. Leave with Back: the recording is sent.", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                u.testDone -> {
+                    Text("Test done. Leave with Back: the recording is sent.", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    if (u.learning) Muted("Learning the keys from the phrases…")
+                    if (u.learned.isNotEmpty()) Muted(u.learned)
+                    if (u.canUndoLearn) TextButton(onClick = { app.typing.undoLearn() }) { Text("Undo: keep the earlier model") }
+                }
                 u.target.isEmpty() -> Muted("Hand relaxed, thumb away from the fingers. The first phrase comes in a moment.")
                 else -> {
                     Muted("Phrase ${u.phrase} of ${u.phrases}. Type it, then full stop (key 1). Do not correct mistakes.")

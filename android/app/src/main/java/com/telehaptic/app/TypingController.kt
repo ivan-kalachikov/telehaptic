@@ -3,6 +3,7 @@ package com.telehaptic.app
 import android.os.SystemClock
 import com.telehaptic.app.core.Keys
 import com.telehaptic.app.core.Kind
+import com.telehaptic.app.core.PhraseLearning
 import com.telehaptic.app.core.PlanSettings
 import com.telehaptic.app.core.T9
 import com.telehaptic.app.core.Touch
@@ -38,6 +39,10 @@ class TypingController(private val app: App) {
         val phrase: Int = 0,
         val phrases: Int = 0,
         val testDone: Boolean = false,
+        /** After a test: the model is being learned from its phrases; then what came of it. */
+        val learning: Boolean = false,
+        val learned: String = "",
+        val canUndoLearn: Boolean = false,
     )
 
     @Volatile private var t9: T9? = null
@@ -88,10 +93,16 @@ class TypingController(private val app: App) {
     private var test = false
     private var phraseList: List<String> = emptyList()
     private var phraseIndex = 0
+    /** Touches of the phrase being typed (6 numbers each, taken or not), and the phrases typed so far. */
+    private var phraseOpen = false
+    private val phraseTouches = ArrayList<DoubleArray>()
+    private val typed = ArrayList<PhraseLearning.Phrase>()
 
     private fun askPhrase() {
         val p = phraseList.getOrNull(phraseIndex) ?: return
         typing?.clear()
+        phraseTouches.clear()
+        phraseOpen = true
         if (recording) app.recorder.event("phrase", phraseIndex, p)
         app.cues.say("Type: $p. Then full stop.")
         _ui.update { it.copy(target = p, phrase = phraseIndex + 1, phrases = phraseList.size, testDone = false) }
@@ -100,12 +111,47 @@ class TypingController(private val app: App) {
     /** Full stop in a test: the phrase is done; the typed text goes into the recording. */
     private fun phraseDone(typed: String) {
         if (recording) app.recorder.event("phrase_end", phraseIndex, typed)
+        if (phraseOpen) PhraseLearning.keysOf(phraseList[phraseIndex])?.let { this.typed.add(PhraseLearning.Phrase(it, phraseTouches.toList())) }
+        phraseOpen = false
         phraseIndex++
         if (phraseIndex < phraseList.size) { main.postDelayed({ if (test && active) askPhrase() }, 1200); return }
         test = false
-        app.cues.say("Test done. Thank you.")
         _ui.update { it.copy(target = "", testDone = true) }
         finishRecording()
+        learnFromTest()
+    }
+
+    /**
+     * The test's phrases teach a new model (see [Brain.learnFromTyping]); it is kept only if it
+     * reads them better than the old one. Runs on the capsule thread, the result is said.
+     */
+    private fun learnFromTest() {
+        val phrases = typed.toList()
+        typed.clear()
+        if (phrases.size < Brain.MIN_TYPED_PHRASES) { app.cues.say("Test done. Thank you."); return }
+        app.cues.say("Test done. Learning from it.")
+        _ui.update { it.copy(learning = true, learned = "") }
+        val session = "typing-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+        app.engine.post {
+            val r = try { app.brain.learnFromTyping(session, phrases) } catch (e: Exception) { app.log.w("typing", "learning", e); null }
+            main.post {
+                val pct = { sc: PhraseLearning.Score -> (sc.share * 100).toInt() }
+                val text = when {
+                    r == null -> "Learning failed; the old model stays."
+                    r.kept -> "Learned from ${phrases.size} phrases: the new model read ${pct(r.after)}% of the keys of phrases it had not seen, the old one ${pct(r.before)}%."
+                    else -> "The old model stays: it read ${pct(r.before)}% of the keys, a model learned from these phrases ${pct(r.after)}%."
+                }
+                app.cues.say(if (r?.kept == true) "Learned. New model ${pct(r.after)} percent, old ${pct(r.before)} percent." else "The old model stays.")
+                _ui.update { it.copy(learning = false, learned = text, canUndoLearn = r?.kept == true) }
+            }
+        }
+    }
+
+    /** Puts back the model from before the test. */
+    fun undoLearn() {
+        app.engine.post { app.brain.undoRetrain() }
+        app.cues.say("Undone. The earlier model is back.")
+        _ui.update { it.copy(canUndoLearn = false, learned = "Undone: the model from before the test is back.") }
     }
 
     fun start(asTest: Boolean = false) {
@@ -113,7 +159,8 @@ class TypingController(private val app: App) {
         if (typing == null && d != null) typing = Typing(d)
         active = true
         test = asTest
-        _ui.update { it.copy(target = "", phrase = 0, phrases = 0, testDone = false) }
+        _ui.update { it.copy(target = "", phrase = 0, phrases = 0, testDone = false, learning = false, learned = "", canUndoLearn = false) }
+        typed.clear(); phraseOpen = false
         // Training running (e.g. started from a second window) keeps the detector; screen keys still work.
         if (!app.training.active) {
             app.brain.armSegmenterFreshRest()   // rest is measured again: the capsule may sit differently now
@@ -161,6 +208,7 @@ class TypingController(private val app: App) {
     }
 
     private fun onTouch(d: Engine.Detected) {
+        if (test && phraseOpen) phraseTouches.add(d.x)
         val r = d.result ?: return
         val jolt = d.jolt?.let { "%.2f".format(java.util.Locale.US, it) } ?: "-"
         if (!r.accepted) {

@@ -4,6 +4,7 @@ import android.content.Context
 import com.telehaptic.app.core.Evaluation
 import com.telehaptic.app.core.FeatureSet
 import com.telehaptic.app.core.Lda
+import com.telehaptic.app.core.PhraseLearning
 import com.telehaptic.app.core.Segmenter
 import com.telehaptic.app.core.Touch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -128,6 +129,32 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         return Refit(before, after, kept = true)
     }
 
+    /** Learning from a typing test: [kept] = the model learned from the phrases replaced the old one. */
+    data class Learned(val before: PhraseLearning.Score, val after: PhraseLearning.Score, val kept: Boolean, val touches: Int)
+
+    /**
+     * A new model from the phrases of a typing test (forced alignment, see [PhraseLearning]). It
+     * replaces the old model only if it reads these phrases at least as well: each phrase by a model
+     * learned from the others (after) against the old model (before). The old touches are not kept:
+     * after the magnet or the strap moved they only lead the alignment astray. Undo puts them back.
+     * Capsule thread.
+     */
+    fun learnFromTyping(session: String, phrases: List<PhraseLearning.Phrase>): Learned {
+        val usable = phrases.filter { it.xs.isNotEmpty() }
+        val before = PhraseLearning.read(model, usable)
+        if (usable.size < MIN_TYPED_PHRASES) return Learned(before, PhraseLearning.Score(0, before.needed), false, 0)
+        val after = PhraseLearning.leaveOnePhraseOut(usable, features)
+        log.i("brain", "typing test: old model ${before.right}/${before.needed}, learned ${after.right}/${after.needed} keys")
+        if (after.right < before.right) return Learned(before, after, false, 0)
+        val list = PhraseLearning.learn(usable, features, session)
+        if (list.isEmpty()) return Learned(before, after, false, 0)
+        if (touchFile.exists()) touchFile.copyTo(touchBak, overwrite = true)
+        if (modelFile.exists()) modelFile.copyTo(modelBak, overwrite = true)
+        writeAll(list)
+        rebuild(rest, Evaluation.Report(after.right, after.needed, emptyList(), emptyList()))
+        return Learned(before, after, true, list.size)
+    }
+
     /** Puts back the model from before the last re-fit, exactly as it was saved (survives an app restart). Capsule thread. */
     fun undoRetrain() {
         if (!touchBak.exists()) return
@@ -157,6 +184,11 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         engine.model = null
         rest = null; segParams = Segmenter.Params(); keyY = emptyList()
         _summary.value = Summary()
+    }
+
+    companion object {
+        /** Fewer typed phrases than this teach too little (3 phrases read 57% of unseen keys, 6 read 71%). */
+        const val MIN_TYPED_PHRASES = 3
     }
 
     private fun dropBackup() { touchBak.delete(); modelBak.delete() }
