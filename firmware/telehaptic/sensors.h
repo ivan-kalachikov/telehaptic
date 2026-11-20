@@ -5,7 +5,7 @@
 enum ChipType : uint8_t { CHIP_NONE = 0, CHIP_QMC5883P, CHIP_QMC5883L, CHIP_HMC5883L };
 
 struct Mag {
-  uint8_t channel;    // multiplexer channel 0..7, or NO_MUX if on the main bus
+  uint8_t channel;    // multiplexer channel 0..7, NO_MUX if on the main bus (D4/D5), BUS2 on D0/D1
   uint8_t addr;
   ChipType type;
   int16_t last[3];    // last good reading (repeated after an I2C error)
@@ -21,6 +21,9 @@ struct MagConfig {
 };
 
 static const uint8_t NO_MUX = 0xFF;
+// Second bus without a multiplexer: sensor 2 on D0 (SDA) / D1 (SCL). The two QMC5883P share one
+// address, so each gets its own pair of pins; the one I2C peripheral is moved between them.
+static const uint8_t BUS2 = 0x80;
 // 100 kHz for the first bring-up: the bus runs through the multiplexer and wires across the hand.
 // Two magnetometers at 100 kHz take about 3 ms per tick, inside the 5 ms of 200 Hz (counted as overruns if not).
 static const uint32_t I2C_HZ = 100000;
@@ -32,7 +35,7 @@ extern bool muxPresent;
 
 const char* chipName(ChipType t);
 
-// Scans the main bus and every multiplexer channel, fills mags[].
+// Scans the main bus, every multiplexer channel (if there is one) or else the second bus; fills mags[].
 // Each report line goes to emit() (Serial + BLE INFO).
 void sensorsScan(void (*emit)(const char*));
 
