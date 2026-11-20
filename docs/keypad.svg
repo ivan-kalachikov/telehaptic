@@ -35,7 +35,7 @@
       <text x="378" y="138">.</text><text x="474" y="138">abc</text><text x="540" y="138">def</text>
       <text x="393" y="203">ghi</text><text x="503" y="203">jkl</text><text x="576" y="203">mno</text>
       <text x="383" y="268">pqrs</text><text x="486" y="268">tuv</text><text x="558" y="268">wxyz</text>
-      <text x="351" y="327">next</text><text x="429" y="327">space</text><text x="486" y="327">⌫</text>
+      <text x="351" y="327">⌫</text><text x="429" y="327">space</text><text x="486" y="327">next</text>
     </g>
   </g>
 

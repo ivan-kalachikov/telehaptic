@@ -1,6 +1,7 @@
 package com.telehaptic.app
 
 import android.os.SystemClock
+import com.telehaptic.app.core.Keys
 import com.telehaptic.app.core.Kind
 import com.telehaptic.app.core.PlanSettings
 import com.telehaptic.app.core.T9
@@ -174,7 +175,7 @@ class TypingController(private val app: App) {
         // Possible correction: a letter key erased right away, then another letter key. Only keys 2-9:
         // an erased space or full stop was usually meant, it is the word that changes.
         val letter = { k: String -> k.length == 1 && k[0] in '2'..'9' }
-        if (r.key == "#") {
+        if (r.key == Keys.ERASE) {
             erased = lastTouch?.takeIf { letter(it.first) }?.second
         } else {
             erased?.let { x -> if (letter(r.key)) corrections.add(Touch(r.key, x, "typing", "correction")) }
@@ -210,8 +211,8 @@ class TypingController(private val app: App) {
         when (k) {
             "0" -> app.cues.say(said.ifEmpty { "space" })
             "1" -> app.cues.say(if (word.isEmpty()) "full stop" else "$said, full stop")
-            "*" -> app.cues.say(spoken(t.currentWord()).ifEmpty { "no other word" } + if (t.corrected().isNotEmpty()) ", corrected" else "")
-            "#" -> {
+            Keys.NEXT -> app.cues.say(spoken(t.currentWord()).ifEmpty { "no other word" } + if (t.corrected().isNotEmpty()) ", corrected" else "")
+            Keys.ERASE -> {
                 // Say what is left, so a correction can be followed by ear.
                 val erased = before.lastOrNull()
                 val now = t.currentWord()

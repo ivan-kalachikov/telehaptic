@@ -379,7 +379,7 @@ fun TypingScreen(nav: Nav, test: Boolean = false) {
                 }
             }
             Text(shown, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
-            if (u.corrected.isNotEmpty()) Muted("Underlined: corrected by the word list. Not this word? * gives the others.")
+            if (u.corrected.isNotEmpty()) Muted("Underlined: corrected by the word list. Not this word? # gives the others.")
         }
         if (u.candidates.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -4,8 +4,8 @@ import kotlin.math.ln
 
 /**
  * T9 for English: keys 2-9 carry letters as on phone keypads (ITU E.161), words come from a
- * frequency list. 0 = space (accepts the word), 1 = full stop, * = next variant of the word,
- * # = erase.
+ * frequency list. 0 = space (accepts the word), 1 = full stop, # = next variant of the word,
+ * * = erase (see [Keys.ERASE]).
  *
  * A press may be uncertain ("soft T9"): it is 8 probabilities, one per letter key. A word's
  * keys are compared with the presses, so the word list can overrule a press the model was
@@ -143,8 +143,8 @@ class Typing(private val t9: T9) {
             }
             "0" -> { commit(); text.append(' ') }
             "1" -> { commit(); text.append('.') }
-            "*" -> if (presses.isNotEmpty()) variant++
-            "#" -> erase()
+            Keys.NEXT -> if (presses.isNotEmpty()) variant++
+            Keys.ERASE -> erase()
         }
     }
 
