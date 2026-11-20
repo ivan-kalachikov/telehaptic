@@ -274,6 +274,12 @@ class Training(private val app: App) {
         val u = _ui.value
         if (u.phase != Phase.TAPS || u.paused || SystemClock.elapsedRealtime() < acceptAfter) return
         val k = tapSeq.getOrNull(tapIndex) ?: return
+        // A plateau that began sooner than a person can hear the key and reach it is the thumb
+        // leaving the previous key (it lifts, jolts and settles in the air), not this key.
+        if (d.tNs / 1_000_000 - lastTapAt < MIN_REACTION_MS) {
+            app.recorder.eventAt(d.tNs, "tap_too_soon", tapIndex, k)
+            return
+        }
         touches.add(Touch(k, d.x, "tap${tapIndex / 12}", "tap"))
         lastWasSkip = false
         app.recorder.eventAt(d.tNs, "tap_plateau", tapIndex, k)   // start of the plateau the detector found
@@ -408,6 +414,12 @@ class Training(private val app: App) {
 
     companion object {
         const val CLICK_MS = 40
+        /**
+         * Earliest start of a tap's plateau after its cue. Training TRAIN_20261120-152533 (stacked
+         * 8x2 magnets): plateaus at the cued key began 0.78-1.15 s after the cue; those 0.24-0.56 s
+         * after it lay at the previous key or between keys, the cued key 18-64 uT away.
+         */
+        const val MIN_REACTION_MS = 600L
         /** Holds: announce, +1.5 s press, 1.5 s hold, 1 s until the next announce (rest 2.5 s before each press). */
         val TIMING = PlanSettings(leadMs = 2500, holdMs = 1500, restMs = 2500, blocks = 2, stillMs = 0, rotateMs = 0, motorPulses = 0)
     }
