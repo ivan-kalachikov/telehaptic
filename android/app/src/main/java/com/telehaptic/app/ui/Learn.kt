@@ -344,16 +344,6 @@ fun TypingScreen(nav: Nav, test: Boolean = false) {
     )
 
     Page(if (test) "Typing test" else "Typing", nav, onBack = leave) {
-        if (test) Section {
-            when {
-                u.testDone -> Text("Test done. Leave with Back: the recording is sent.", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                u.target.isEmpty() -> Muted("The first phrase comes in a moment.")
-                else -> {
-                    Muted("Phrase ${u.phrase} of ${u.phrases}. Type it, then full stop (key 1).")
-                    Text(u.target, fontSize = 24.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                }
-            }
-        }
         when (cap.status) {
             com.telehaptic.app.Capsule.Status.CONNECTED -> {}
             com.telehaptic.app.Capsule.Status.NO_DATA -> Text("No data from the capsule. Waiting…", color = Palette.warn)
@@ -365,10 +355,21 @@ fun TypingScreen(nav: Nav, test: Boolean = false) {
             }
         }
         VoiceWarning()
-        Muted("Start with the hand relaxed and the thumb away from the fingers for a second.")
+        if (!test) Muted("Start with the hand relaxed and the thumb away from the fingers for a second.")
+        // Touches are found but none looks like a key: the capsule sits differently from the training.
+        if (u.rejected >= 5 && u.text.isBlank()) Text("${u.rejected} touches did not look like any key. If the capsule was taken off or moved since the training, train again with it as it sits now.", color = Palette.warn)
         if (u.dictError) Text("The word list could not be loaded: the digits are shown as typed, without words. Details in Logs.", color = Palette.warn)
         else if (!u.ready) Muted("Loading the dictionary…")
         Section {
+            // Typing test: the phrase right above what is typed, so both fit on the screen with the keypad.
+            if (test) when {
+                u.testDone -> Text("Test done. Leave with Back: the recording is sent.", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                u.target.isEmpty() -> Muted("Hand relaxed, thumb away from the fingers. The first phrase comes in a moment.")
+                else -> {
+                    Muted("Phrase ${u.phrase} of ${u.phrases}. Type it, then full stop (key 1). Do not correct mistakes.")
+                    Text(u.target, fontSize = 22.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
             // Letters the word list put in place of the model's key: underlined, in the warning colour.
             val shown = androidx.compose.ui.text.buildAnnotatedString {
                 append(u.text.ifEmpty { " " })
@@ -378,7 +379,7 @@ fun TypingScreen(nav: Nav, test: Boolean = false) {
                         textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline), at, at + 1)
                 }
             }
-            Text(shown, fontSize = 28.sp, lineHeight = 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp))
+            Text(shown, fontSize = if (test) 22.sp else 28.sp, lineHeight = if (test) 28.sp else 36.sp, modifier = Modifier.fillMaxWidth().heightIn(min = if (test) 40.dp else 110.dp))
             if (u.corrected.isNotEmpty()) Muted("Underlined: corrected by the word list. Not this word? # gives the others.")
         }
         if (u.candidates.isNotEmpty()) {
@@ -391,11 +392,11 @@ fun TypingScreen(nav: Nav, test: Boolean = false) {
         }
         // The last key stays outlined until the next one, so it can be read from a distance.
         HandDiagram(u.lastKey, if (now < u.flashUntil) Mark.RECOGNIZED else Mark.LAST,
-            Modifier.fillMaxWidth(), letters = true, onKey = { app.typing.screenKey(it) })
+            if (test) Modifier.fillMaxWidth(0.8f).align(Alignment.CenterHorizontally) else Modifier.fillMaxWidth(), letters = true, onKey = { app.typing.screenKey(it) })
         if (app.prefs.detailed && u.lastKey.isNotEmpty()) {
             Muted("${u.lastKey} · ${f0(u.posterior * 100)}% · runner-up ${u.second} (${f0(u.secondPosterior * 100)}%) · not like any key: ${u.rejected}")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!test) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Telehaptic", u.text))
             }) { Text("Copy") }

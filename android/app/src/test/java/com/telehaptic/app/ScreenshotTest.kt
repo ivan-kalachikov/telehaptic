@@ -166,4 +166,13 @@ class ScreenshotTest {
             wordStart = 14, corrected = listOf(1)))   // "you": the o came from the word list
         shot("13-typing")
     }
+
+    @Test fun typingTest() {
+        app.capsule.showForPreview(connected)
+        app.brain.showForPreview(trained)
+        rule.setContent { AppTheme { TypingScreen(nav(Screen.Home, Screen.TypingTest), test = true) } }
+        app.typing.showForPreview(TypingController.Ui(text = "see yo", candidates = listOf("you", "yo"), variant = 0,
+            lastKey = "6", flashUntil = Long.MAX_VALUE, ready = true, target = "see you later", phrase = 2, phrases = 6))
+        shot("14-typing-test")
+    }
 }
