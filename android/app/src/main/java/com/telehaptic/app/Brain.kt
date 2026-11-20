@@ -29,7 +29,7 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         val confusions: List<Triple<String, String, Int>> = emptyList(),
         val weakKeys: List<String> = emptyList(),
         val touches: Int = 0,
-        val features: String = "both",
+        val features: String = "diff",
         val savedMs: Long = 0,           // when the model was last changed (wall clock)
     )
 
@@ -38,7 +38,13 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
     private val modelFile = File(dir, "model.json")
     private val _summary = MutableStateFlow(Summary())
     val summary: StateFlow<Summary> = _summary
-    @Volatile var features = FeatureSet.BOTH; private set
+    /**
+     * The model works on the difference of the two sensors: it cancels most of the Earth's field,
+     * which changes with every turn of the hand. On the first real training (2 holds per key) the
+     * nearest key across the two blocks was right for 21 of 24 holds with the difference and 8 of 24
+     * with both sensors' raw values. A model stored with another set is refitted on load.
+     */
+    @Volatile var features = FeatureSet.DIFF; private set
     @Volatile var rest: DoubleArray? = null; private set
     @Volatile var segParams = Segmenter.Params(); private set
     /** Key centres as the detector sees them; a fresh rest level must not look like one. */
@@ -210,7 +216,6 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
     private fun load() {
         if (!modelFile.exists()) return
         val j = JSONObject(modelFile.readText())
-        features = FeatureSet.byCode(j.optString("features", "both"))
         rest = j.optJSONArray("rest")?.let { a -> DoubleArray(a.length()) { a.getDouble(it) } }
         segParams = Segmenter.Params(onUt = j.optDouble("on_ut", 6.0))
         val all = touches()
