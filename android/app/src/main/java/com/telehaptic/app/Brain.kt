@@ -146,8 +146,13 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         val after = PhraseLearning.leaveOnePhraseOut(usable, features)
         log.i("brain", "typing test: old model ${before.right}/${before.needed}, learned ${after.right}/${after.needed} keys")
         if (after.right < before.right) return Learned(before, after, false, 0)
-        val list = PhraseLearning.learn(usable, features, session)
-        if (list.isEmpty()) return Learned(before, after, false, 0)
+        val learned = PhraseLearning.learn(usable, features, session)
+        if (learned.isEmpty()) return Learned(before, after, false, 0)
+        // Keys the test did not have keep their old touches, moved by the common shift to the new ones:
+        // without them a key would vanish from the model (e.g. erase and next if the test had no * or #).
+        val old = touches()
+        val keysNow = learned.map { it.key }.toSet()
+        val list = learned + Evaluation.applyShift(old.filter { it.key !in keysNow }, Evaluation.shift(old, learned))
         if (touchFile.exists()) touchFile.copyTo(touchBak, overwrite = true)
         if (modelFile.exists()) modelFile.copyTo(modelBak, overwrite = true)
         writeAll(list)
