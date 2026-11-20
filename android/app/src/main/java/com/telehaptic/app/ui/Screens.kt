@@ -238,7 +238,7 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, detailed:
 fun readableName(id: String): String {
     val parts = id.split('_')
     val kind = when (parts.firstOrNull()) {
-        "CAL" -> "Calibration"; "KEYS" -> "Keys"; "NOMAG" -> "No magnet"; "TRAIN" -> "Training"; "RETRAIN" -> "Re-fit"; else -> parts.firstOrNull() ?: id
+        "CAL" -> "Calibration"; "KEYS" -> "Keys"; "NOMAG" -> "No magnet"; "TRAIN" -> "Training"; "RETRAIN" -> "Re-fit"; "TYPE" -> "Typing"; else -> parts.firstOrNull() ?: id
     }
     val stamp = parts.firstOrNull { it.length == 15 && it[8] == '-' }
     val whenText = stamp?.let {

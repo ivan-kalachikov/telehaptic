@@ -1,6 +1,8 @@
 package com.telehaptic.app
 
 import android.os.SystemClock
+import com.telehaptic.app.core.Kind
+import com.telehaptic.app.core.PlanSettings
 import com.telehaptic.app.core.T9
 import com.telehaptic.app.core.Touch
 import com.telehaptic.app.core.Typing
@@ -79,6 +81,7 @@ class TypingController(private val app: App) {
         if (!app.training.active) {
             app.brain.armSegmenterFreshRest()   // rest is measured again: the capsule may sit differently now
             app.engine.claim(this, Engine.Mode.TYPING) { onTouch(it) }
+            startRecording()
             if (app.capsule.ui.value.status == Capsule.Status.CONNECTED) app.cues.say("Typing. Hand relaxed, thumb away from the fingers for a second.")
         }
         publish()
@@ -87,17 +90,41 @@ class TypingController(private val app: App) {
     fun stop() {
         active = false
         app.engine.release(this)
+        if (recording) {
+            recording = false
+            app.recorder.event("end")
+            app.recorder.finish(false) { r -> if (r.file != null && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file) }
+        }
+    }
+
+    /**
+     * Typing is recorded like training (kind TYPE): the stream and every touch the detector found,
+     * taken or not, so false presses can be looked at afterwards. Only when no other recording runs.
+     */
+    private var recording = false
+    private fun startRecording() {
+        if (recording || app.recorder.isOpen || app.capsule.ui.value.status != Capsule.Status.CONNECTED) return
+        val spec = RecordingSpec(Kind.TYPING, null, false, app.prefs.magnet, app.prefs.distanceMm, "", 0, emptyList(), PlanSettings())
+        recording = app.recorder.start(spec) { _ ->
+            if (!active) { app.recorder.finish(true) {}; recording = false; return@start }
+            app.recorder.event("start")
+            app.recorder.event("detector", -1, app.brain.detectorText())
+        }
     }
 
     private fun onTouch(d: Engine.Detected) {
         val r = d.result ?: return
-        if (!r.accepted) {
-            app.log.i("typing", "rejected: nearest ${r.key} d2 ${"%.1f".format(java.util.Locale.US, r.d2)}")
-            // Not like any key: a long buzz, different from the short click of an accepted touch.
-            app.capsule.motor(REJECT_MS)
+        val jolt = d.jolt?.let { "%.2f".format(java.util.Locale.US, it) } ?: "-"
+        if (!r.accepted || d.air) {
+            // Not like any key, or nearer to the thumb in the air than to the key: ignored without a
+            // sound. (A long buzz here fired on every pause of the thumb in the air.)
+            val why = if (d.air) "air" else "unlike"
+            app.log.i("typing", "ignored ($why): nearest ${r.key} d2 ${"%.1f".format(java.util.Locale.US, r.d2)} jolt $jolt")
+            if (recording) app.recorder.eventAt(d.tNs, "touch_$why", -1, r.key)
             _ui.update { it.copy(rejected = it.rejected + 1) }
             return
         }
+        if (recording) app.recorder.eventAt(d.tNs, "touch", -1, r.key)
         if (typing == null) t9?.let { typing = Typing(it) }
         val t = typing ?: return
         app.capsule.motor(Training.CLICK_MS)

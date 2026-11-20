@@ -34,7 +34,7 @@ object Keys {
 }
 
 /** What a recording is. Names go into file names and meta.json. */
-enum class Kind(val code: String) { CALIBRATION("CAL"), KEYS("KEYS"), NO_MAGNET("NOMAG"), TRAIN("TRAIN"), RETRAIN("RETRAIN") }
+enum class Kind(val code: String) { CALIBRATION("CAL"), KEYS("KEYS"), NO_MAGNET("NOMAG"), TRAIN("TRAIN"), RETRAIN("RETRAIN"), TYPING("TYPE") }
 enum class Posture(val code: String, val title: String) {
     TABLE("table", "On the table, on its edge"),
     DOWN("down", "Hanging along the body"),

@@ -17,12 +17,19 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
     enum class Mode { OFF, TAPS, TYPING }
 
     /** Touch found by the segmenter; classification is filled in TYPING mode. */
-    data class Detected(val tNs: Long, val x: DoubleArray, val result: Lda.Result?)
+    /**
+     * Touch found by the segmenter; classification is filled in TYPING mode. [air]: the field is
+     * nearer to where the thumb rests in the air (from training) than to the best key. [jolt]: the
+     * largest jolt before it, m/s² (null without an accelerometer).
+     */
+    data class Detected(val tNs: Long, val x: DoubleArray, val result: Lda.Result?, val air: Boolean = false, val jolt: Double? = null)
 
     private val main = Handler(Looper.getMainLooper())
     val segmenter = Segmenter()
     @Volatile var mode = Mode.OFF; private set
     @Volatile var model: Lda? = null
+    /** Fields with the thumb away from the fingers (rest windows of the training holds), 6 numbers each. */
+    @Volatile var air: List<DoubleArray> = emptyList()
     @Volatile private var onTouch: ((Detected) -> Unit)? = null
     @Volatile private var owner: Any? = null
     // The motor's field and shaking ring on for a moment after the motor flag ends (the analysis
@@ -100,12 +107,15 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
             val gyro = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
             if (capsule.info.imu) noteAcc(tNs[k], DoubleArray(3) { s.acc[it] * capsule.info.accMgPerLsb / 1000.0 * G })
             val ev = segmenter.add(tNs[k], x.copyOf(), twoSensors, gyro) ?: continue
-            // A thumb that only stops in the air, near the fingers, also makes a settled plateau.
-            // A real quick tap jolts the capsule: without a jolt the field must move twice as far.
+            // A thumb that only stops in the air, near the fingers, also makes a settled plateau. A real
+            // tap jolts the capsule. With the stacked magnet the field moves by 10-40 uT with the thumb
+            // in the air alone, so a large move without a jolt is not taken either.
             val jolt = if (capsule.info.imu) joltSince(ev.tNs - JOLT_BEFORE_NS) else null
-            if (!joltGate(jolt, segmenter.lastDeviation, segmenter.p.onUt)) { rejectedNoJolt++; segmenter.cancelTouch(); continue }
-            val res = if (mode == Mode.TYPING) model?.classify(ev.x) else null
-            val d = Detected(ev.tNs, ev.x, res)
+            if (!joltGate(jolt)) { rejectedNoJolt++; segmenter.cancelTouch(); continue }
+            val m = model
+            val res = if (mode == Mode.TYPING) m?.classify(ev.x) else null
+            val isAir = res != null && m != null && air.any { m.d2(ev.x, it) < res.d2 }
+            val d = Detected(ev.tNs, ev.x, res, isAir, jolt)
             main.post { onTouch?.invoke(d) }
         }
     }
@@ -150,7 +160,7 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
          */
         const val JOLT_MS2 = 0.5
 
-        /** A touch counts with a jolt, or without one if the field moved at least twice the threshold. No IMU data: no gate. */
-        fun joltGate(jolt: Double?, deviationUt: Double, onUt: Double) = jolt == null || jolt >= JOLT_MS2 || deviationUt >= 2 * onUt
+        /** A touch counts only with a jolt. No IMU data: no gate. */
+        fun joltGate(jolt: Double?) = jolt == null || jolt >= JOLT_MS2
     }
 }
