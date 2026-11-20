@@ -141,6 +141,8 @@ fun HomeScreen(nav: Nav) {
         VoiceWarning()
 
         LearnCards(nav, ui.status.linked)
+        // Which build is installed, at a glance: the last number is the release build.
+        Muted("App ${com.telehaptic.app.BuildConfig.VERSION_NAME}" + if (ui.firmware.isNotEmpty()) " · capsule firmware ${ui.firmware}" else "")
     }
 }
 
