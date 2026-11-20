@@ -34,7 +34,7 @@ object Keys {
 }
 
 /** What a recording is. Names go into file names and meta.json. */
-enum class Kind(val code: String) { CALIBRATION("CAL"), KEYS("KEYS"), NO_MAGNET("NOMAG"), TRAIN("TRAIN"), RETRAIN("RETRAIN"), TYPING("TYPE") }
+enum class Kind(val code: String) { CALIBRATION("CAL"), KEYS("KEYS"), NO_MAGNET("NOMAG"), TRAIN("TRAIN"), RETRAIN("RETRAIN"), TYPING("TYPE"), AIR("AIR") }
 enum class Posture(val code: String, val title: String) {
     TABLE("table", "On the table, on its edge"),
     DOWN("down", "Hanging along the body"),
@@ -53,6 +53,8 @@ data class PlanSettings(
     val rotateMs: Long = 40000,
     val motorPulses: Int = 5,
     val motorPulseMs: Int = 300,
+    val airMs: Long = 30000,        // air-and-taps: the thumb moves in the air, no touching
+    val tapGapMs: Long = 2500,      // air-and-taps: one quick tap per cue
 )
 
 object Plans {
@@ -71,6 +73,22 @@ object Plans {
             out.add(Step(press + s.holdMs, "release", i, k))
         }
         out.add(Step(s.leadMs + seq.size * (s.holdMs + s.restMs), "end"))
+        return out
+    }
+
+    /**
+     * Air and taps, for telling a tap from the thumb moving or stopping in the air: [PlanSettings.airMs]
+     * of thumb movement above the fingers without touching ("air_start" .. "air_end"), then one
+     * quick tap per "tap_cue", [PlanSettings.tapGapMs] apart. No clicks: the motor stays off.
+     */
+    fun air(seq: List<String>, s: PlanSettings): List<Step> {
+        val out = ArrayList<Step>()
+        out.add(Step(0, "start"))
+        out.add(Step(s.leadMs, "air_start"))
+        out.add(Step(s.leadMs + s.airMs, "air_end"))
+        val first = s.leadMs + s.airMs + 3000
+        for ((i, k) in seq.withIndex()) out.add(Step(first + i * s.tapGapMs, "tap_cue", i, k))
+        out.add(Step(first + seq.size * s.tapGapMs, "end"))
         return out
     }
 

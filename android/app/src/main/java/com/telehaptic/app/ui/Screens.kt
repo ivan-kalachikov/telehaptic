@@ -196,6 +196,9 @@ fun ExperimentsScreen(nav: Nav) {
         ExperimentCard("table", "Keys", "48 touches: 4 blocks of 12 keys. Hold 2.5 s, rest 2 s. About 4 minutes.") {
             nav.go(Screen.Setup(Kind.KEYS))
         }
+        ExperimentCard("table", "Air and taps", "30 s of moving the thumb in the air above the fingers without touching, then 24 quick taps, one per spoken key. Teaches the capsule a tap from a pause in the air. About 2 minutes.") {
+            nav.go(Screen.Setup(Kind.AIR))
+        }
         ExperimentCard("nomagnet", "No magnet", "Same as Keys, with the magnet taken off the nail. Shows that the signal comes from the magnet, not from the hand posture.") {
             nav.go(Screen.Setup(Kind.NO_MAGNET))
         }
@@ -238,7 +241,7 @@ private fun RecordingRow(f: File, item: Uploader.Item?, sent: Boolean, detailed:
 fun readableName(id: String): String {
     val parts = id.split('_')
     val kind = when (parts.firstOrNull()) {
-        "CAL" -> "Calibration"; "KEYS" -> "Keys"; "NOMAG" -> "No magnet"; "TRAIN" -> "Training"; "RETRAIN" -> "Re-fit"; "TYPE" -> "Typing"; else -> parts.firstOrNull() ?: id
+        "CAL" -> "Calibration"; "KEYS" -> "Keys"; "NOMAG" -> "No magnet"; "TRAIN" -> "Training"; "RETRAIN" -> "Re-fit"; "TYPE" -> "Typing"; "AIR" -> "Air and taps"; else -> parts.firstOrNull() ?: id
     }
     val stamp = parts.firstOrNull { it.length == 15 && it[8] == '-' }
     val whenText = stamp?.let {
@@ -280,7 +283,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
     var posture by remember { mutableStateOf(Posture.TABLE) }
     var rewear by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
-    val title = when (kind) { Kind.CALIBRATION -> "Calibration"; Kind.NO_MAGNET -> "No magnet"; else -> "Keys" }
+    val title = when (kind) { Kind.CALIBRATION -> "Calibration"; Kind.NO_MAGNET -> "No magnet"; Kind.AIR -> "Air and taps"; else -> "Keys" }
 
     Page(title, nav) {
         when (kind) {
@@ -290,6 +293,11 @@ fun SetupScreen(nav: Nav, kind: Kind) {
                 Text("After the second beep slowly turn the hand in all directions for 40 s, as if looking it over.")
             }
             Kind.NO_MAGNET -> Section { Text("Take the magnet off the nail. The rest is as in Keys: touch the same finger segments as with the magnet.") }
+            Kind.AIR -> Section {
+                Text("Magnet on the nail.")
+                Text("After the beep, for 30 s: move the thumb in the air above the fingers, near them, in all directions, with pauses, as when looking for a key. Do not touch the fingers.")
+                Text("Then the phone says a key every 2.5 s: one quick tap on it, as in typing, and lift the thumb.")
+            }
             else -> Section {
                 Text("One beep: touch and hold. Two beeps: release and relax the hand.")
                 Muted("The next key is shown and spoken in advance, during the rest.")
@@ -333,7 +341,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
             }
         }
 
-        MagnetLine(nav, showMagnet = kind == Kind.KEYS)   // calibration and no-magnet: the magnet is off the nail
+        MagnetLine(nav, showMagnet = kind == Kind.KEYS || kind == Kind.AIR)   // calibration and no-magnet: the magnet is off the nail
         VoiceWarning()
         OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
 
@@ -341,7 +349,7 @@ fun SetupScreen(nav: Nav, kind: Kind) {
         val missing = when {
             !ui.status.linked -> "Connect the capsule on the main screen."
             ui.mags.isEmpty() -> "The capsule found no magnetometers. Open Diagnostics."
-            kind == Kind.KEYS && app.prefs.magnet.isEmpty() -> "Choose the magnet."
+            (kind == Kind.KEYS || kind == Kind.AIR) && app.prefs.magnet.isEmpty() -> "Choose the magnet."
             app.prefs.distanceMm <= 0 -> "Enter the distance between the sensors."
             else -> ""
         }
@@ -385,6 +393,21 @@ fun RunScreen(nav: Nav) {
             Text(big, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             if (small.isNotEmpty()) Text(small, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             if (s.phase != Session.Phase.SAVING) Text("$left s", fontSize = 40.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        } else if (s.kind == Kind.AIR) {
+            if (s.phase == Session.Phase.TAP) {
+                CueBlock(progressText = "Tap ${s.trial + 1} of ${s.trials}", fraction = (s.trial + 1f) / maxOf(1, s.trials),
+                    action = "Tap", key = s.key, holding = true)
+            } else {
+                val (big, small) = when (s.phase) {
+                    Session.Phase.AIR -> "Move the thumb in the air" to "Above the fingers, with pauses. Do not touch."
+                    Session.Phase.SAVING -> "Saving…" to ""
+                    else -> "Get ready" to "Magnet on the nail"
+                }
+                Spacer(Modifier.height(24.dp))
+                Text(big, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                if (small.isNotEmpty()) Text(small, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                if (s.phase != Session.Phase.SAVING) Text("$left s", fontSize = 40.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            }
         } else {
             val done = (s.trial + if (s.phase == Session.Phase.HOLD) 0 else 1).coerceAtLeast(0)
             val holding = s.phase == Session.Phase.HOLD
