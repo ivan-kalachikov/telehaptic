@@ -109,13 +109,13 @@ class ModelTest {
         "43556".forEach { typing.key(it.toString()) }
         typing.key("0")
         "4663".forEach { typing.key(it.toString()) }
-        typing.key("*")
+        typing.key("#")
         assertEquals("hello home", typing.display())
-        typing.key("#")
+        typing.key("*")
         assertEquals("hello goo", typing.display())    // "466" = beginning of "good"
-        typing.key("#"); typing.key("#"); typing.key("#")
+        typing.key("*"); typing.key("*"); typing.key("*")
         assertEquals("hello ", typing.display())        // the digits are gone, the space stays
-        typing.key("#")
+        typing.key("*")
         assertEquals("hello", typing.display())
     }
 
@@ -130,9 +130,9 @@ class ModelTest {
         val t = Typing(t9)
         for (k in "43556" + "0") t.key(k.toString())
         assertEquals("hello ", t.display())
-        t.key("#"); assertEquals("hello", t.display())        // the space
-        t.key("#"); assertEquals("hell", t.display())         // back into the word, last letter gone
-        t.key("#"); t.key("7"); assertEquals("help", t.display())   // continues the same word
+        t.key("*"); assertEquals("hello", t.display())        // the space
+        t.key("*"); assertEquals("hell", t.display())         // back into the word, last letter gone
+        t.key("*"); t.key("7"); assertEquals("help", t.display())   // continues the same word
         t.key("0"); assertEquals("help ", t.display())
     }
 
@@ -146,7 +146,7 @@ class ModelTest {
         assertEquals("43456", t.digits)
         assertEquals("hello", t.currentWord())
         assertEquals(listOf(2), t.corrected())          // the third letter is the word list's, not the model's
-        t.key("#")
+        t.key("*")
         assertEquals("4345", t.digits)                 // erase takes the last press away
         // Two misread keys in one word are not overruled: the keys are shown as typed.
         val two = Typing(t9)

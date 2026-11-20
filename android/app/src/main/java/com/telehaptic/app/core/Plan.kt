@@ -8,7 +8,16 @@ object Keys {
     private val FINGERS = listOf("index", "middle", "ring", "little")
     private val PHALANGES = listOf("segment near the palm", "middle segment", "tip segment")
 
-    private val LETTERS = listOf(".", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz", "next", "space", "erase")
+    /**
+     * Erase is on * (little finger, segment near the palm) and "next word" on # (its tip). # sits
+     * 4.5 uT from 9 (ring finger tip) in TRAIN_20261120-161733, and erase read as 9 typed a letter
+     * instead of taking one away; * is 26.6 uT from its nearest key. A misread # now only changes
+     * the word variant.
+     */
+    const val ERASE = "*"
+    const val NEXT = "#"
+
+    private val LETTERS = listOf(".", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz", "erase", "space", "next")
 
     /** What a key does in typing: its T9 letters, or its function. */
     fun letters(key: String) = LETTERS.getOrElse(ALL.indexOf(key)) { "" }

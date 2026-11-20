@@ -192,7 +192,7 @@ fun SettingsScreen(nav: Nav) {
             Row(Modifier.fillMaxWidth().toggleable(value = speak, role = Role.Switch) { speak = it; p.speakTyping = it }, verticalAlignment = Alignment.CenterVertically) {
                 Column1(Modifier.weight(1f)) {
                     Text("Speak while typing")
-                    Muted("The word on space and full stop, the new word on *, \"erase\" on #.")
+                    Muted("The word on space and full stop, the new word on #, \"erase\" on *.")
                 }
                 Spacer(Modifier.width(12.dp))
                 Switch(checked = speak, onCheckedChange = null)
