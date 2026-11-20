@@ -36,8 +36,6 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
     private val dir = File(ctx.filesDir, "model").apply { mkdirs() }
     private val touchFile = File(dir, "touches.csv")
     private val modelFile = File(dir, "model.json")
-    /** Fields with the thumb away from the fingers, from the rest windows of the last training's holds. */
-    private val airFile = File(dir, "air.csv")
     private val _summary = MutableStateFlow(Summary())
     val summary: StateFlow<Summary> = _summary
     /**
@@ -89,8 +87,7 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
     }
 
     /** First training: replaces everything. Returns the honest report (held-out quick taps). */
-    fun train(session: String, list: List<Touch>, restY: DoubleArray?, air: List<DoubleArray> = emptyList()): Evaluation.Report {
-        atomicWrite(airFile, air.joinToString("") { a -> a.joinToString(",") { "%.3f".format(Locale.US, it) } + "\n" })
+    fun train(session: String, list: List<Touch>, restY: DoubleArray?): Evaluation.Report {
         val tapGroups = list.filter { it.source == "tap" }.map { it.group }.toSet()
         val report = Evaluation.leaveGroupOut(list, features, tapGroups.ifEmpty { list.map { it.group }.toSet() })
         writeAll(list.map { it.copy(session = session) })
@@ -156,15 +153,10 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
 
     /** Deletes the model and its touches, backups included. Runs on the capsule thread like the rest of Brain. */
     fun forget() = engine.post {
-        touchFile.delete(); modelFile.delete(); airFile.delete(); dropBackup()
-        engine.model = null; engine.air = emptyList()
+        touchFile.delete(); modelFile.delete(); File(dir, "air.csv").delete(); dropBackup()
+        engine.model = null
         rest = null; segParams = Segmenter.Params(); keyY = emptyList()
         _summary.value = Summary()
-    }
-
-    private fun readAir(): List<DoubleArray> = if (!airFile.exists()) emptyList() else airFile.readLines().mapNotNull { l ->
-        val f = l.split(',')
-        if (f.size != 6) null else DoubleArray(6) { f[it].toDoubleOrNull() ?: return@mapNotNull null }
     }
 
     private fun dropBackup() { touchBak.delete(); modelBak.delete() }
@@ -173,7 +165,6 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         val all = touches()
         val m = Lda.fit(all, features)
         engine.model = m
-        engine.air = readAir()
         rest = restY
         val ky = m?.let { lda -> lda.keys.map { k -> engine.segmenter.yOf(meanOf(all, k), engine.twoSensors) } } ?: emptyList()
         keyY = ky
@@ -229,7 +220,6 @@ class Brain(ctx: Context, private val engine: Engine, private val log: AppLog) {
         segParams = Segmenter.Params(onUt = j.optDouble("on_ut", 6.0))
         val all = touches()
         engine.model = Lda.fit(all, features)
-        engine.air = readAir()
         val conf = j.optJSONArray("confusions")
         _summary.value = Summary(
             trained = engine.model != null, date = j.optString("date"), correct = j.optInt("correct"), total = j.optInt("total"),

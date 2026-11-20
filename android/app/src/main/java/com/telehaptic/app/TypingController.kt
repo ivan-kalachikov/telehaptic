@@ -115,12 +115,10 @@ class TypingController(private val app: App) {
     private fun onTouch(d: Engine.Detected) {
         val r = d.result ?: return
         val jolt = d.jolt?.let { "%.2f".format(java.util.Locale.US, it) } ?: "-"
-        if (!r.accepted || d.air) {
-            // Not like any key, or nearer to the thumb in the air than to the key: ignored without a
-            // sound. (A long buzz here fired on every pause of the thumb in the air.)
-            val why = if (d.air) "air" else "unlike"
-            app.log.i("typing", "ignored ($why): nearest ${r.key} d2 ${"%.1f".format(java.util.Locale.US, r.d2)} jolt $jolt")
-            if (recording) app.recorder.eventAt(d.tNs, "touch_$why", -1, r.key)
+        if (!r.accepted) {
+            // Not like any key: ignored without a sound (a long buzz here fired on every false touch).
+            app.log.i("typing", "ignored (unlike): nearest ${r.key} d2 ${"%.1f".format(java.util.Locale.US, r.d2)} jolt $jolt")
+            if (recording) app.recorder.eventAt(d.tNs, "touch_unlike", -1, r.key)
             _ui.update { it.copy(rejected = it.rejected + 1) }
             return
         }
