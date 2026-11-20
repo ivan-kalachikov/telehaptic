@@ -118,7 +118,7 @@ class FakeCapsule(private val app: App, seed: Int = 1) {
                 b.putShort(Math.round(v * 10).toShort())   // 1000 LSB/G: 1 LSB = 0.1 µT
             }
             val shake = if (motor || ringing) 2000.0 else 20.0
-            val jolt = if (t < joltUntilNs) 400.0 else 0.0   // about 1 m/s²
+            val jolt = if (t < joltUntilNs) 800.0 else 0.0   // about 1.9 m/s² raw; about 1 m/s² high-passed, as real taps
             for (i in 0 until 3) b.putShort((rnd.nextGaussian() * shake).toInt().toShort())
             for (i in 0 until 3) b.putShort(((if (i == 2) 4098 else 0) + rnd.nextGaussian() * shake + if (i == 2) jolt else 0.0).toInt().toShort())
         }
