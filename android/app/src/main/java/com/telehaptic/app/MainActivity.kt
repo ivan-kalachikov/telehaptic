@@ -37,6 +37,7 @@ sealed class Screen {
     data object Train : Screen()
     data object Retrain : Screen()
     data object Typing : Screen()
+    data object TypingTest : Screen()
 }
 
 class Nav(private val stack: MutableList<Screen>) {
@@ -74,7 +75,7 @@ private fun Root(activity: MainActivity) {
     val session by app.session.ui.collectAsState()
     val training by app.training.ui.collectAsState()
     val running = (session.phase != Session.Phase.IDLE && session.phase != Session.Phase.DONE) ||
-        training.phase == Training.Phase.HOLDS || training.phase == Training.Phase.TAPS || nav.current == Screen.Typing
+        training.phase == Training.Phase.HOLDS || training.phase == Training.Phase.TAPS || nav.current == Screen.Typing || nav.current == Screen.TypingTest
 
     LaunchedEffect(running) { activity.keepScreenOn(running) }
     // The screen follows what is running: after the activity is recreated (or opened from the
@@ -104,5 +105,6 @@ private fun Root(activity: MainActivity) {
         Screen.Train -> TrainScreen(nav, retrain = false)
         Screen.Retrain -> TrainScreen(nav, retrain = true)
         Screen.Typing -> TypingScreen(nav)
+        Screen.TypingTest -> TypingScreen(nav, test = true)
     }
 }

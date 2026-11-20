@@ -196,6 +196,9 @@ fun ExperimentsScreen(nav: Nav) {
         ExperimentCard("table", "Keys", "48 touches: 4 blocks of 12 keys. Hold 2.5 s, rest 2 s. About 4 minutes.") {
             nav.go(Screen.Setup(Kind.KEYS))
         }
+        ExperimentCard("table", "Typing test", "6 short phrases: the phone says each one, you type it with T9 and end it with a full stop (key 1). Shows how many touches are missed, extra or misread. Needs a trained model. About 5 minutes.") {
+            nav.go(Screen.TypingTest)
+        }
         ExperimentCard("table", "Air and taps", "30 s of moving the thumb in the air above the fingers without touching, then 24 quick taps, one per spoken key. Teaches the capsule a tap from a pause in the air. About 2 minutes.") {
             nav.go(Screen.Setup(Kind.AIR))
         }

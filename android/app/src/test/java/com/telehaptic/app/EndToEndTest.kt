@@ -103,6 +103,18 @@ class EndToEndTest {
         println("typed: '${t.text}', rejected ${t.rejected}, motor ${cap.motorPulses}")
         assertEquals("hello world ", t.text)
         assertEquals(0, t.rejected)
+
+        // Typing test: the phone gives a phrase, it is typed and ended with a full stop, the next comes.
+        app.typing.start(asTest = true)
+        cap.run(4500)
+        val target = app.typing.ui.value.target
+        assertTrue("a phrase is given", target.isNotEmpty())
+        assertEquals(1, app.typing.ui.value.phrase)
+        val keys = target.split(' ').joinToString("0") { T9.code(it)!! } + "1"
+        for (k in keys) { cap.touch(k.toString()); cap.run(300); cap.touch(null); cap.run(400) }
+        cap.run(2000)
+        assertEquals("the next phrase comes after the full stop", 2, app.typing.ui.value.phrase)
+        app.typing.stop()
     }
 
     @Test fun capsuleLostDuringTapsPausesAndGoesOn() {
