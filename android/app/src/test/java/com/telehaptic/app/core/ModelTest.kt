@@ -27,7 +27,8 @@ class ModelTest {
 
     @Test fun ldaSeparatesKeys() {
         val train = touches(4, 2.0, { "b$it" })
-        val m = Lda.fit(train)!!
+        // These synthetic centres are spread over all six numbers, not only the difference: fit on both.
+        val m = Lda.fit(train, FeatureSet.BOTH)!!
         val test = touches(2, 2.0, { "t" })
         val r = Evaluation.on(m, test)
         assertTrue("accuracy ${r.share}", r.share > 0.9)
