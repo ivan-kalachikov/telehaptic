@@ -33,6 +33,9 @@ class FakeCapsule(private val app: App, seed: Int = 1) {
     private var seq = 0
     private var startNs = SystemClock.elapsedRealtimeNanos()
     private var motorUntilNs = 0L
+    private var joltUntilNs = 0L
+    /** A touch jolts the capsule (as quick taps do); false = the thumb only settles, as when hovering. */
+    var jolts = true
     private var ringUntilNs = 0L
     var motorPulses = 0; private set
     /** False: the capsule is out of reach, no packets arrive (time still passes). */
@@ -73,6 +76,7 @@ class FakeCapsule(private val app: App, seed: Int = 1) {
         to = if (k == null) earth.copyOf() else DoubleArray(6) { earth[it] + keyField.getValue(k)[it] + rnd.nextGaussian() * touchJitterUt }
         moveStartNs = now
         key = k
+        if (k != null && jolts) joltUntilNs = now + 30_000_000L
     }
 
     private fun fieldAt(t: Long): DoubleArray {
@@ -114,8 +118,9 @@ class FakeCapsule(private val app: App, seed: Int = 1) {
                 b.putShort(Math.round(v * 10).toShort())   // 1000 LSB/G: 1 LSB = 0.1 µT
             }
             val shake = if (motor || ringing) 2000.0 else 20.0
+            val jolt = if (t < joltUntilNs) 400.0 else 0.0   // about 1 m/s²
             for (i in 0 until 3) b.putShort((rnd.nextGaussian() * shake).toInt().toShort())
-            for (i in 0 until 3) b.putShort(((if (i == 2) 4098 else 0) + rnd.nextGaussian() * shake).toInt().toShort())
+            for (i in 0 until 3) b.putShort(((if (i == 2) 4098 else 0) + rnd.nextGaussian() * shake + if (i == 2) jolt else 0.0).toInt().toShort())
         }
         index += n; seq = (seq + 1) and 0xFFFF
         app.capsule.testNotify(Proto.DATA, b.array(), now)
