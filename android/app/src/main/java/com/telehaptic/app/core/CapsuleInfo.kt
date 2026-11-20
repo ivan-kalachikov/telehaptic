@@ -84,14 +84,19 @@ class CapsuleInfo {
 /** Plain-language text for SCAN lines. */
 object ScanText {
     private fun place(where: String) = when {
-        where == "main" -> "Main bus"
+        where == "main" -> "Main bus (D4/D5)"
+        where == "bus2" -> "Sensor 2 bus (D0/D1)"
         where.startsWith("ch") -> "Channel ${where.removePrefix("ch")}"
         else -> where
     }
 
     private fun wires(where: String): String {
         val ch = where.removePrefix("ch")
-        return if (where.startsWith("ch")) "the SD$ch/SC$ch wires" else "the D4 (SDA) and D5 (SCL) wires"
+        return when {
+            where.startsWith("ch") -> "the SD$ch/SC$ch wires"
+            where == "bus2" -> "the D0 (SDA) and D1 (SCL) wires"
+            else -> "the D4 (SDA) and D5 (SCL) wires"
+        }
     }
 
     /** One line for the scan list in Diagnostics. */
@@ -100,9 +105,12 @@ object ScanText {
         if (p.size < 2) return line
         val where = p[1]
         return when {
-            where == "begin" -> if (line.contains("mux=yes")) "Multiplexer found" else "No multiplexer, looking for sensors on the main bus"
+            where == "begin" -> if (line.contains("mux=yes")) "Multiplexer found" else "No multiplexer: sensor 1 on D4/D5, sensor 2 on D0/D1"
             where == "end" -> "Magnetometers found: ${line.substringAfter("mags=", "0")}"
             where == "BUS_STUCK" -> "I2C bus is not working: " + stuckWhich(line) + ". Check the D4/D5 wires, shorts to GND and pull-ups."
+            where == "SWAPPED" -> "SDA and SCL wires are crossed: D4 goes to SCL, D5 to SDA. The capsule works this way; re-solder them when convenient"
+            where == "bus2" && p.getOrNull(2) == "SWAPPED" -> "Sensor 2: SDA and SCL wires are crossed: D0 goes to SCL, D1 to SDA. The capsule works this way; re-solder them when convenient"
+            where == "bus2" && p.getOrNull(2) == "STUCK" -> "Sensor 2 bus (D0/D1) is not working: " + stuckWhich(line) + ". Check the D0/D1 wires and shorts to GND."
             p.size >= 4 && p[2].startsWith("0x") && (p[3] == "QMC5883P" || p[3] == "QMC5883L") ->
                 "${place(where)}: ${p[3]}, sensor ${p.getOrNull(4)?.removePrefix("mag") ?: "?"}" +
                     (if (line.contains("NOTE")) " (unusual ID, working anyway)" else "")
@@ -110,6 +118,11 @@ object ScanText {
             p.getOrNull(3) == "UNKNOWN" -> "${place(where)}: unknown chip at ${p[2]}"
             p.getOrNull(2) == "OTHER" -> "${place(where)}: no magnetometer; other devices answer at ${p.drop(3).joinToString(" ")}"
             p.getOrNull(2) == "EMPTY" && where == "ch2" -> "Channel 2 (spare): empty"
+            // Main bus: the XIAO's own pull-ups are on (the core's I2C driver), so the wires come first.
+            p.getOrNull(2) == "EMPTY" && where == "main" ->
+                "Main bus (D4/D5): nothing answers. Check that D4 goes to SDA and D5 to SCL of sensor 1 (or the multiplexer), 3.3 V on its VCC, and the solder joints"
+            p.getOrNull(2) == "EMPTY" && where == "bus2" ->
+                "Sensor 2 bus (D0/D1): nothing answers. Check that D0 goes to SDA and D1 to SCL of sensor 2, 3.3 V on its VCC, and the solder joints"
             p.getOrNull(2) == "EMPTY" -> "${place(where)}: sensor does not answer. Check ${wires(where)} and the 4.7 kΩ pull-ups to 3.3 V"
             p.getOrNull(2) == "MUX_ERROR" -> "${place(where)}: the multiplexer did not switch"
             else -> line
@@ -131,7 +144,8 @@ object ScanText {
     fun problem(line: String): String? {
         val p = line.split(' ').filter { it.isNotEmpty() }
         val where = p.getOrNull(1) ?: return null
-        if (where == "BUS_STUCK") return describe(line)
+        if (where == "BUS_STUCK" || where == "SWAPPED") return describe(line)
+        if (where == "bus2" && (p.getOrNull(2) == "SWAPPED" || p.getOrNull(2) == "STUCK")) return describe(line)
         if (p.getOrNull(2) == "EMPTY" && where != "ch2") return describe(line)  // ch2 is the spare
         if (p.getOrNull(3) == "HMC5883L" || p.getOrNull(3) == "UNKNOWN" || p.getOrNull(2) == "MUX_ERROR") return describe(line)
         return null

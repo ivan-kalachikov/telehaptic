@@ -33,6 +33,13 @@ static const uint8_t HMC_ADDR = 0x1E;        // [HMC]
 static uint8_t muxCurrent = 0xFE;            // unknown
 // Devices on the main bus stay visible on every channel; they are skipped there.
 static bool onMain[128];
+// Two buses on one I2C peripheral (TWIM0 takes any pins: TwoWire::setPins in the Seeed core):
+// bus 0 = D4 SDA / D5 SCL (sensor 1, or the multiplexer), bus 1 = D0 SDA / D1 SCL (sensor 2).
+// A bus is marked swapped when the scan finds its two wires crossed; it then works the other way round.
+static const uint8_t BUS_PINS[2][2] = {{PIN_WIRE_SDA, PIN_WIRE_SCL}, {D0, D1}};
+static bool busSwapped[2] = {false, false};
+static int8_t busCurrent = -1;               // which bus the peripheral is on; -1 = not set
+static uint8_t pinSda = PIN_WIRE_SDA, pinScl = PIN_WIRE_SCL;   // pins of the current bus
 
 const char* chipName(ChipType t) {
   switch (t) {
@@ -66,8 +73,28 @@ static bool readRegs(uint8_t addr, uint8_t reg, uint8_t* buf, uint8_t n) {
   return true;
 }
 
-// Selects one multiplexer channel (0..7), or none (NO_MUX). [TCA]
+// Puts the I2C peripheral on the given pins (Arduino numbers). TwoWire::setPins takes effect at
+// begin(); end() disables TWIM first, and setClock() disables and enables it again.
+static void usePins(uint8_t sda, uint8_t scl) {
+  Wire.end();
+  pinSda = sda;
+  pinScl = scl;
+  Wire.setPins(sda, scl);
+  Wire.begin();
+  Wire.setClock(I2C_HZ);
+}
+
+static void busSelect(uint8_t b) {
+  if (b == busCurrent) return;
+  bool s = busSwapped[b];
+  usePins(BUS_PINS[b][s ? 1 : 0], BUS_PINS[b][s ? 0 : 1]);
+  busCurrent = b;
+}
+
+// Selects the second bus (BUS2), or a multiplexer channel (0..7) or none (NO_MUX) on the main bus. [TCA]
 static bool muxSelect(uint8_t ch) {
+  if (ch == BUS2) { busSelect(1); return true; }
+  busSelect(0);
   if (!muxPresent) return ch == NO_MUX;
   if (ch == muxCurrent) return true;
   Wire.beginTransmission(MUX_ADDR);
@@ -135,10 +162,11 @@ static void scanOne(uint8_t ch, void (*emit)(const char*), bool hintIfEmpty) {
   char line[160], addrs[100], note[80];
   char where[8];
   if (ch == NO_MUX) snprintf(where, sizeof where, "main");
+  else if (ch == BUS2) snprintf(where, sizeof where, "bus2");
   else snprintf(where, sizeof where, "ch%u", ch);
 
-  bool channel = ch != NO_MUX;
-  int n = listAddresses(addrs, sizeof addrs, muxPresent ? MUX_ADDR : 0xFF, channel);
+  bool channel = ch != NO_MUX && ch != BUS2;   // a multiplexer channel: the main bus shows through it
+  int n = listAddresses(addrs, sizeof addrs, muxPresent && ch != BUS2 ? MUX_ADDR : 0xFF, channel);
   const uint8_t candidates[] = {QMCP_ADDR, QMCL_ADDR, HMC_ADDR};
   bool any = false;
   for (uint8_t a : candidates) {
@@ -172,30 +200,51 @@ static void scanOne(uint8_t ch, void (*emit)(const char*), bool hintIfEmpty) {
 
 // Both lines must idle high (pull-ups). A line held low would make the TWIM driver,
 // which waits for bus events without a timeout, hang on the first transfer.
-static bool busIdleHigh(char* line, size_t len) {
+// The report for a held line goes to line: "SCAN <tag> sda=<0|1> scl=<0|1>".
+static bool busIdleHigh(char* line, size_t len, const char* tag) {
   // While TWIM is enabled it owns the pins, so the recovery clocks below would not reach SCL:
   // release the peripheral first (TwoWire::end disables TWIM in the nRF52 core).
   Wire.end();
   // Weak internal pull-ups, so lines with nothing connected do not float low.
-  pinMode(PIN_WIRE_SDA, INPUT_PULLUP);
-  pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
+  pinMode(pinSda, INPUT_PULLUP);
+  pinMode(pinScl, INPUT_PULLUP);
   delayMicroseconds(50);
-  int sda = digitalRead(PIN_WIRE_SDA), scl = digitalRead(PIN_WIRE_SCL);
+  int sda = digitalRead(pinSda), scl = digitalRead(pinScl);
   if (sda == LOW && scl == HIGH) {
     // A slave stuck mid-byte holds SDA: clock SCL up to 9 times until it lets go (standard I2C recovery).
-    for (int i = 0; i < 9 && digitalRead(PIN_WIRE_SDA) == LOW; i++) {
-      pinMode(PIN_WIRE_SCL, OUTPUT);
-      digitalWrite(PIN_WIRE_SCL, LOW);
+    for (int i = 0; i < 9 && digitalRead(pinSda) == LOW; i++) {
+      pinMode(pinScl, OUTPUT);
+      digitalWrite(pinScl, LOW);
       delayMicroseconds(5);
-      pinMode(PIN_WIRE_SCL, INPUT_PULLUP);
+      pinMode(pinScl, INPUT_PULLUP);
       delayMicroseconds(5);
     }
-    sda = digitalRead(PIN_WIRE_SDA);
+    sda = digitalRead(pinSda);
   }
+  Wire.setPins(pinSda, pinScl);
   Wire.begin();  // gives the pins back to the I2C peripheral
   Wire.setClock(I2C_HZ);
-  snprintf(line, len, "SCAN BUS_STUCK sda=%d scl=%d", sda, scl);
+  snprintf(line, len, "SCAN %s sda=%d scl=%d", tag, sda, scl);
   return sda == HIGH && scl == HIGH;
+}
+
+// True if any address answers on the bus as it is now.
+static bool anyAnswers() {
+  for (uint8_t a = 0x08; a < 0x78; a++) if (probe(a)) return true;
+  return false;
+}
+
+// Bus b is selected and nothing answers on it: maybe its SDA and SCL are crossed somewhere
+// (continuity and voltages look right then). Try it the other way round; keep that if anything
+// answers, else go back.
+static void trySwapped(uint8_t b) {
+  busSwapped[b] = !busSwapped[b];
+  busCurrent = -1;
+  busSelect(b);
+  if (anyAnswers()) return;
+  busSwapped[b] = !busSwapped[b];
+  busCurrent = -1;
+  busSelect(b);
 }
 
 void sensorsScan(void (*emit)(const char*)) {
@@ -204,18 +253,37 @@ void sensorsScan(void (*emit)(const char*)) {
   muxPresent = false;
   memset(onMain, 0, sizeof onMain);
   char line[64];
-  if (!busIdleHigh(line, sizeof line)) {
-    emit(line);  // no I2C traffic at all: check wiring, shorts to GND, pull-ups
-    emit("SCAN end mags=0");
-    return;
+  busCurrent = -1;
+  busSelect(0);
+  bool mainOk = busIdleHigh(line, sizeof line, "BUS_STUCK");
+  if (!mainOk) {
+    emit(line);  // no I2C traffic on the main bus: check wiring, shorts to GND
+  } else {
+    muxPresent = probe(MUX_ADDR);
+    if (!muxPresent && !anyAnswers()) { trySwapped(0); muxPresent = probe(MUX_ADDR); }
+    if (busSwapped[0]) emit("SCAN SWAPPED sda=D5 scl=D4");
   }
-  muxPresent = probe(MUX_ADDR);
   snprintf(line, sizeof line, "SCAN begin mux=%s", muxPresent ? "yes" : "no");
   emit(line);
 
   // Main bus with every channel switched off.
-  if (muxPresent) muxSelect(NO_MUX);
-  scanOne(NO_MUX, emit, !muxPresent);
+  if (mainOk) {
+    if (muxPresent) muxSelect(NO_MUX);
+    scanOne(NO_MUX, emit, !muxPresent);
+  }
+
+  if (!muxPresent) {
+    // No multiplexer: sensor 2 on its own bus, D0 / D1.
+    muxSelect(BUS2);
+    if (!busIdleHigh(line, sizeof line, "bus2 STUCK")) {
+      emit(line);
+    } else {
+      if (!anyAnswers()) trySwapped(1);
+      if (busSwapped[1]) emit("SCAN bus2 SWAPPED sda=D1 scl=D0");
+      scanOne(BUS2, emit, true);
+    }
+    muxSelect(NO_MUX);
+  }
 
   if (muxPresent) {
     for (uint8_t ch = 0; ch < 8; ch++) {

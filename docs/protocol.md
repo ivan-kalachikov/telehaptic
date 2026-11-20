@@ -17,7 +17,8 @@ When the format changes, change all of them together and raise `PKT_VERSION`.
 | INFO | `7e1a0004-5c2d-4b8e-9f3a-1d6c2b8e4a10` | notify + read, UTF-8 text lines |
 
 - Device name: `Telehaptic`.
-- External I2C runs at 100 kHz for the first bring-up (multiplexer and wires across the hand); two magnetometers take about 3 ms per tick.
+- External I2C runs at 100 kHz for the first bring-up (wires across the hand); two magnetometers take about 3 ms per tick.
+- Two ways to wire two magnetometers with the same address: **without a multiplexer** (default) sensor 1 on D4 SDA / D5 SCL, sensor 2 on D0 SDA / D1 SCL, and the firmware moves its one I2C peripheral between the two pin pairs on every read (`TwoWire::setPins`); **or** a TCA9548A at 0x70 on D4/D5 with the sensors on channels 0 and 1. The scan finds which one is there.
 - INFO lines have their own send queue, so a full DATA queue cannot drop them. The app asks for the status again if a packet's sensor count does not match the last CFG line.
 - USB Serial lines are written only when they fit in the buffer, so a terminal that does not read cannot block the firmware.
 - MTU up to 247, so up to 244 payload bytes per notification.
@@ -66,7 +67,7 @@ A packet is sent when it is full, but no later than 30 ms after its first sample
 | 13 | I2C read error: that sensor's values repeat the last good ones |
 | 14 | the read error was the IMU's (bit 13 is set too); the IMU values repeat the last good ones |
 
-Magnetometer order: a sensor on the main bus first, if any, then by multiplexer channel. Which sensor is on which channel is in the `SCAN` and `CFG` lines.
+Magnetometer order: a sensor on the main bus (D4/D5) first, if any, then by multiplexer channel, then the second bus (D0/D1, only without a multiplexer). Which sensor is on which channel is in the `SCAN` and `CFG` lines.
 
 ## CTRL commands
 
@@ -106,9 +107,11 @@ PONG 123456 1650000
 
 - `BOOT reason=`: cause of the last start: `power_on`, `reset_button`, `software`, `lockup`, `watchdog`, `other`. `software` means a software reset: either the stall monitor (the sample index had not moved for 2 s, for example an I2C transfer that never ended) or the reboot after flashing; RESETREAS does not tell them apart. The monitor is a FreeRTOS task, not the WDT peripheral, so flashing is unaffected.
 - `SCAN <where> …`:
-  - `<where>` is `main` (the main bus) or `chN` (a multiplexer channel);
+  - `<where>` is `main` (the main bus, D4/D5), `chN` (a multiplexer channel) or `bus2` (the second bus, D0/D1; scanned only when there is no multiplexer);
   - variants: address and chip, `UNSUPPORTED`, `UNKNOWN`, `OTHER <addresses>`, `EMPTY HINT_PULLUPS`, `MUX_ERROR`;
-  - `HINT_PULLUPS` is written for empty channels 0–2; the app shows "Channel N: sensor does not answer. Check the SDN/SCN wires and the 4.7 kΩ pull-ups to 3.3 V". Channel 2 is the spare.
+  - `HINT_PULLUPS` is written for an empty main bus without a multiplexer, an empty `bus2` and empty channels 0–2; the app shows "Channel N: sensor does not answer. Check the SDN/SCN wires and the 4.7 kΩ pull-ups to 3.3 V". Channel 2 is the spare.
+- `SCAN SWAPPED sda=D5 scl=D4`: nothing answered on D4 = SDA, D5 = SCL, but something did with the two swapped, so the wires are crossed. The capsule keeps working on the swapped pins (the nRF52 I2C peripheral can use any pins). Comes before `SCAN begin`.
+- `SCAN bus2 SWAPPED sda=D1 scl=D0`, `SCAN bus2 STUCK sda=0 scl=1`: the same for the second bus.
 - `SCAN BUS_STUCK sda=0 scl=1`: before the scan SDA or SCL is held low. Nothing is sent on the bus then: the core's I2C driver waits without a timeout and would hang. Cause: wiring, a short to GND or missing pull-ups.
 - `CLOCK FAIL`: RTC2 is not counting; there will be no samples.
 - In `CFG` each magnetometer has its chip, place and LSB per gauss.

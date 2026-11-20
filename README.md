@@ -29,8 +29,7 @@ The difference of the two sensors' readings largely cancels the uniform Earth fi
 ## Hardware
 
 - Seeed XIAO nRF52840 Sense: BLE, on-board IMU LSM6DS3TR-C, LiPo charging.
-- TCA9548A I2C multiplexer at 0x70.
-- GY-271 modules with QMC5883P (0x2C); QMC5883L (0x0D) also supported. Channel 0: sensor 1 (index side), channel 1: sensor 2 (little finger side), channel 2: spare.
+- GY-271 modules with QMC5883P (0x2C); QMC5883L (0x0D) also supported. Sensor 1 (index side) on D4 SDA / D5 SCL, sensor 2 (little finger side) on D0 SDA / D1 SCL. Both have the same address, so the firmware moves the one I2C peripheral between the two pin pairs; no multiplexer. A TCA9548A at 0x70 on D4/D5 (sensors on channels 0 and 1) still works if fitted.
 - Grove vibration motor on D2.
 - LiPo 3.7 V 320 mAh with a switch.
 

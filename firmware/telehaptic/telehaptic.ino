@@ -117,6 +117,7 @@ static void emitConfig() {
     const Mag& m = mags[i];
     char where[6];
     if (m.channel == NO_MUX) strcpy(where, "main");
+    else if (m.channel == BUS2) strcpy(where, "bus2");
     else snprintf(where, sizeof where, "ch%u", m.channel);
     pos += snprintf(line + pos, sizeof line - pos, " mag%u=%s@%s,%u", i + 1, chipName(m.type), where,
                     (unsigned)lsbPerGauss(m, cfg));
