@@ -176,9 +176,8 @@ class CoreTest {
 
     @Test fun joltGate() {
         val g = com.telehaptic.app.Engine
-        assertTrue(g.joltGate(0.8, 3.5, 3.0))       // a jolt: taken at the threshold
-        assertFalse(g.joltGate(0.2, 3.5, 3.0))      // no jolt, small move: a thumb settling in the air
-        assertTrue(g.joltGate(0.2, 6.5, 3.0))       // no jolt, but the field moved twice the threshold
-        assertTrue(g.joltGate(null, 3.5, 3.0))      // no accelerometer: no gate
+        assertTrue(g.joltGate(0.8))       // a jolt
+        assertFalse(g.joltGate(0.2))      // no jolt: a thumb settling in the air, however far the field moved
+        assertTrue(g.joltGate(null))      // no accelerometer: no gate
     }
 }

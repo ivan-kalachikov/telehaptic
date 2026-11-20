@@ -355,7 +355,7 @@ class Training(private val app: App) {
                 if (retrain) {
                     val r = app.brain.retrain(sess, list, retrainFull)
                     before = r.before; after = r.after; kept = r.kept
-                } else after = app.brain.train(sess, list, pendingRest)
+                } else after = app.brain.train(sess, list, pendingRest, restRows.toList())
             } catch (e: Exception) {
                 app.log.w("train", "fit", e)
             }

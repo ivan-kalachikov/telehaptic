@@ -64,6 +64,9 @@ class Lda private constructor(
         return Result(keys[best], keys[second], pBest, pSecond, d2[best], d2[best] <= reject[best], probs)
     }
 
+    /** Mahalanobis distance² between two 6-number fields, in this model's features and metric. */
+    fun d2(a6: DoubleArray, b6: DoubleArray) = mahal(features.of(a6), features.of(b6))
+
     private fun mahal(x: DoubleArray, mu: DoubleArray): Double {
         val n = x.size
         var s = 0.0
