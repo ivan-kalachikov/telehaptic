@@ -310,7 +310,7 @@ private fun ConfusionList(r: Evaluation.Report) {
 // ---------------------------------------------------------------- typing
 
 @Composable
-fun TypingScreen(nav: Nav) {
+fun TypingScreen(nav: Nav, test: Boolean = false) {
     val app = App.get()
     val u by app.typing.ui.collectAsState()
     val cap by app.capsule.ui.collectAsState()
@@ -320,7 +320,7 @@ fun TypingScreen(nav: Nav) {
     var askClear by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { now = android.os.SystemClock.elapsedRealtime(); delay(80) } }
     DisposableEffect(Unit) {
-        app.typing.start()
+        app.typing.start(test)
         onDispose { app.typing.stop() }
     }
     val leave: () -> Unit = { if (app.typing.pendingCorrections() > 0) ask = true else nav.back() }
@@ -343,7 +343,17 @@ fun TypingScreen(nav: Nav) {
         dismissButton = { TextButton(onClick = { askClear = false }) { Text("Keep") } },
     )
 
-    Page("Typing", nav, onBack = leave) {
+    Page(if (test) "Typing test" else "Typing", nav, onBack = leave) {
+        if (test) Section {
+            when {
+                u.testDone -> Text("Test done. Leave with Back: the recording is sent.", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                u.target.isEmpty() -> Muted("The first phrase comes in a moment.")
+                else -> {
+                    Muted("Phrase ${u.phrase} of ${u.phrases}. Type it, then full stop (key 1).")
+                    Text(u.target, fontSize = 24.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                }
+            }
+        }
         when (cap.status) {
             com.telehaptic.app.Capsule.Status.CONNECTED -> {}
             com.telehaptic.app.Capsule.Status.NO_DATA -> Text("No data from the capsule. Waiting…", color = Palette.warn)

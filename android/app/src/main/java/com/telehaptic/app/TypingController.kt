@@ -32,6 +32,11 @@ class TypingController(private val app: App) {
         /** Where the current word starts in [text], and its letters the word list put in place of the model's key. */
         val wordStart: Int = 0,
         val corrected: List<Int> = emptyList(),
+        /** Typing test: the phrase to type now ("" outside a test), its number and how many; done = all typed. */
+        val target: String = "",
+        val phrase: Int = 0,
+        val phrases: Int = 0,
+        val testDone: Boolean = false,
     )
 
     @Volatile private var t9: T9? = null
@@ -73,10 +78,41 @@ class TypingController(private val app: App) {
         }.start()
     }
 
-    fun start() {
+    // ------------------------------------------------------------ typing test
+    //
+    // The phone gives phrases; each ends with a full stop (key 1). The recording keeps, for each
+    // phrase, what was asked ("phrase") and what came out ("phrase_end"), next to every touch, so
+    // missed, extra and misread touches can be counted afterwards.
+
+    private var test = false
+    private var phraseList: List<String> = emptyList()
+    private var phraseIndex = 0
+
+    private fun askPhrase() {
+        val p = phraseList.getOrNull(phraseIndex) ?: return
+        typing?.clear()
+        if (recording) app.recorder.event("phrase", phraseIndex, p)
+        app.cues.say("Type: $p. Then full stop.")
+        _ui.update { it.copy(target = p, phrase = phraseIndex + 1, phrases = phraseList.size, testDone = false) }
+    }
+
+    /** Full stop in a test: the phrase is done; the typed text goes into the recording. */
+    private fun phraseDone(typed: String) {
+        if (recording) app.recorder.event("phrase_end", phraseIndex, typed)
+        phraseIndex++
+        if (phraseIndex < phraseList.size) { main.postDelayed({ if (test && active) askPhrase() }, 1200); return }
+        test = false
+        app.cues.say("Test done. Thank you.")
+        _ui.update { it.copy(target = "", testDone = true) }
+        finishRecording()
+    }
+
+    fun start(asTest: Boolean = false) {
         val d = t9
         if (typing == null && d != null) typing = Typing(d)
         active = true
+        test = asTest
+        _ui.update { it.copy(target = "", phrase = 0, phrases = 0, testDone = false) }
         // Training running (e.g. started from a second window) keeps the detector; screen keys still work.
         if (!app.training.active) {
             app.brain.armSegmenterFreshRest()   // rest is measured again: the capsule may sit differently now
@@ -84,17 +120,26 @@ class TypingController(private val app: App) {
             startRecording()
             if (app.capsule.ui.value.status == Capsule.Status.CONNECTED) app.cues.say("Typing. Hand relaxed, thumb away from the fingers for a second.")
         }
+        if (test) {
+            phraseList = PHRASES.shuffled().take(TEST_PHRASES)
+            phraseIndex = 0
+            main.postDelayed({ if (test && active) askPhrase() }, 3500)
+        }
         publish()
     }
 
     fun stop() {
         active = false
+        test = false
         app.engine.release(this)
-        if (recording) {
-            recording = false
-            app.recorder.event("end")
-            app.recorder.finish(false) { r -> if (r.file != null && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file) }
-        }
+        finishRecording()
+    }
+
+    private fun finishRecording() {
+        if (!recording) return
+        recording = false
+        app.recorder.event("end")
+        app.recorder.finish(false) { r -> if (r.file != null && app.prefs.autoUpload && app.prefs.githubToken.isNotEmpty()) app.uploader.upload(r.file) }
     }
 
     /**
@@ -104,7 +149,7 @@ class TypingController(private val app: App) {
     private var recording = false
     private fun startRecording() {
         if (recording || app.recorder.isOpen || app.capsule.ui.value.status != Capsule.Status.CONNECTED) return
-        val spec = RecordingSpec(Kind.TYPING, null, false, app.prefs.magnet, app.prefs.distanceMm, "", 0, emptyList(), PlanSettings())
+        val spec = RecordingSpec(Kind.TYPING, null, false, app.prefs.magnet, app.prefs.distanceMm, if (test) "typing test" else "", 0, emptyList(), PlanSettings())
         recording = app.recorder.start(spec) { _ ->
             if (!active) { app.recorder.finish(true) {}; recording = false; return@start }
             app.recorder.event("start")
@@ -136,7 +181,9 @@ class TypingController(private val app: App) {
             erased = null
         }
         lastTouch = r.key to d.x
+        val textBefore = t.display()
         speak(t, r.key, r.probs)
+        if (test && r.key == "1") phraseDone(textBefore.trimEnd())
         _ui.update { it.copy(
             lastKey = r.key, flashUntil = SystemClock.elapsedRealtime() + 450,
             posterior = r.posterior, second = r.second, secondPosterior = r.secondPosterior,
@@ -185,7 +232,10 @@ class TypingController(private val app: App) {
     /** Typing by tapping on the screen (works without the capsule; no corrections recorded). */
     fun screenKey(k: String) {
         if (typing == null) t9?.let { typing = Typing(it) }
+        val textBefore = typing?.display() ?: ""
+        if (recording) app.recorder.event("screen_key", -1, k)
         typing?.key(k)
+        if (test && k == "1") phraseDone(textBefore.trimEnd())
         lastTouch = null; erased = null
         _ui.update { it.copy(lastKey = k, flashUntil = SystemClock.elapsedRealtime() + 450) }
         publish()
@@ -224,6 +274,14 @@ class TypingController(private val app: App) {
 
     companion object {
         const val REJECT_MS = 200
+        const val TEST_PHRASES = 6
+
+        /** Short everyday phrases; every word is in the word list. */
+        val PHRASES = listOf(
+            "hello how are you", "see you later", "thank you very much", "i am on my way",
+            "call me when you can", "what time is it", "good morning", "where are you now",
+            "i will be there soon", "have a nice day", "how was your day", "let me know",
+        )
     }
 
     /** For screenshots only. */
