@@ -95,7 +95,7 @@ class Lda private constructor(
         }
 
         /** Null if fewer than two keys have data. */
-        fun fit(touches: List<Touch>, features: FeatureSet = FeatureSet.BOTH): Lda? {
+        fun fit(touches: List<Touch>, features: FeatureSet = FeatureSet.DIFF): Lda? {
             val keys = Keys.ALL.filter { k -> touches.any { it.key == k } }
             if (keys.size < 2) return null
             val d = features.dims
