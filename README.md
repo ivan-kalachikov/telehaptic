@@ -10,6 +10,7 @@ Palm side, fingers pointing right:
 - **Phalanx = column**, from the palm to the tip, so the keys sit as on a phone keypad.
 - **Letters** as on phone keys (T9). 1 = full stop, 0 = space, * = erase, # = next word. Erase is on * because # (little finger tip) sits next to 9 (ring finger tip) and was misread as it.
 - **Soft T9:** every letter touch reaches the word list with the model's probabilities for all keys, not as one fixed key. A far more common word can overrule one doubtful touch per word; the other readings stay in the list under #. Corrected letters are underlined and the word is said with "corrected"; Settings → "Correct keys by the word list" turns it off (classic T9).
+- **Learning from typing:** after a typing test (6 phrases) the app finds which touch meant which key of each phrase (forced alignment: a touch may be extra, a key may have no touch) and learns a new model from them. It replaces the old one only if it reads the test's phrases better (each phrase by a model learned from the others); "Undo" puts the old one back. On the first two tests a model learned from 6 phrases read 71% of the keys of unseen phrases, the model from the training before 23%.
 - **N:** the magnet on the thumbnail.
 - **S1, S2 (dashed):** the two magnetometers on the back of the hand, behind the knuckles of the index and little fingers. The bar is the distance between them that the app asks for.
 

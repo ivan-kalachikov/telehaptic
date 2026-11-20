@@ -184,4 +184,35 @@ class ModelTest {
         assertTrue("words missing from the list: $missing", missing.isEmpty())
         assertEquals("no phrase twice", TypingController.PHRASES.size, TypingController.PHRASES.toSet().size)
     }
+
+    @Test fun phraseKeys() {
+        assertEquals(listOf("4", "4", "0", "9", "6", "8", "1"), PhraseLearning.keysOf("hi you"))
+        assertEquals(null, PhraseLearning.keysOf("hi 2"))
+    }
+
+    @Test fun alignmentSkipsExtraTouchesAndMissedKeys() {
+        // Touch 2 is extra (looks like nothing), key "5" got no touch.
+        val keys = listOf("2", "5", "8", "1")
+        val lp = { k: String -> mapOf("2" to -5.0, "5" to -5.0, "8" to -5.0, "1" to -5.0) + (k to -0.1) }
+        val got = PhraseLearning.align(listOf(lp("2"), mapOf("2" to -9.0, "5" to -9.0, "8" to -9.0, "1" to -9.0), lp("8"), lp("1")), keys)
+        assertEquals(listOf("2", null, "8", "1"), got)
+    }
+
+    @Test fun learningFromTypedPhrasesFindsTheKeys() {
+        // Typed phrases with 10% missed keys and some extra touches; which touch is which key is not given.
+        val phrases = TypingController.PHRASES.take(6).map { text ->
+            val keys = PhraseLearning.keysOf(text)!!
+            val xs = ArrayList<DoubleArray>()
+            for (k in keys) {
+                if (rnd.nextDouble() < 0.1) continue
+                xs.add(centre(k).let { c -> DoubleArray(6) { c[it] + 1.5 * gauss() } })
+                if (rnd.nextDouble() < 0.05) xs.add(DoubleArray(6) { 20 * gauss() })
+            }
+            PhraseLearning.Phrase(keys, xs)
+        }
+        val unseen = PhraseLearning.leaveOnePhraseOut(phrases, FeatureSet.DIFF)
+        assertTrue("unseen phrases read ${unseen.right} of ${unseen.needed}", unseen.share > 0.8)
+        val labelled = PhraseLearning.learn(phrases, FeatureSet.DIFF)
+        assertTrue("most touches labelled", labelled.size > 0.8 * phrases.sumOf { it.xs.size })
+    }
 }
