@@ -180,4 +180,16 @@ class CoreTest {
         assertFalse(g.joltGate(0.2))      // no jolt: a thumb settling in the air, however far the field moved
         assertTrue(g.joltGate(null))      // no accelerometer: no gate
     }
+
+    @Test fun airPlan() {
+        val seq = Keys.sequence(2, Random(1))
+        val st = Plans.air(seq, PlanSettings())
+        assertEquals(listOf("start", "air_start", "air_end"), st.take(3).map { it.event })
+        assertEquals(30000L, st[2].atMs - st[1].atMs)
+        val cues = st.filter { it.event == "tap_cue" }
+        assertEquals(24, cues.size)
+        assertEquals(seq, cues.map { it.key })
+        assertEquals("end", st.last().event)
+        assertTrue(st.zipWithNext().all { (a, b) -> b.atMs >= a.atMs })
+    }
 }

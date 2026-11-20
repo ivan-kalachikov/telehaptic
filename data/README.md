@@ -17,6 +17,8 @@ Names:
 - `_rewear`: after putting the capsule on again.
 - `NOMAG_…`: without the magnet.
 - `TRAIN_…` / `RETRAIN_…`: training and retraining in the app.
+- `TYPE_…`: typing, with every touch the detector found and what became of it (`touch`, `touch_air`, `touch_unlike`).
+- `AIR_…`: air and taps: 30 s of the thumb moving in the air without touching (`air_start` .. `air_end`), then one quick tap per `tap_cue`.
 - `_ABORTED`: stopped recordings; the analysis skips them.
 
 Analysis: `pip install -r analysis/requirements.txt`, then `python analysis/analyze.py data` → `report/report.md`.

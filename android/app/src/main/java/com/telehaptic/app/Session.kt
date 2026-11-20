@@ -15,7 +15,7 @@ import kotlin.random.Random
 
 /** Runs one experiment recording: cues on time, events into the recording. Main thread. */
 class Session(private val app: App) {
-    enum class Phase { IDLE, STARTING, LEAD, ANNOUNCE, HOLD, REST, STILL, ROTATE, SAVING, DONE }
+    enum class Phase { IDLE, STARTING, LEAD, ANNOUNCE, HOLD, REST, STILL, ROTATE, AIR, TAP, SAVING, DONE }
 
     data class Ui(
         val phase: Phase = Phase.IDLE,
@@ -67,8 +67,16 @@ class Session(private val app: App) {
         if (running || app.training.active || app.recorder.isOpen) return
         val plan = PlanSettings()
         val seed = Random.nextLong()
-        val seq = if (kind == Kind.CALIBRATION) emptyList() else Keys.sequence(plan.blocks, Random(seed))
-        val steps = if (kind == Kind.CALIBRATION) Plans.calibration(plan) else Plans.keys(seq, plan)
+        val seq = when (kind) {
+            Kind.CALIBRATION -> emptyList()
+            Kind.AIR -> Keys.sequence(2, Random(seed))
+            else -> Keys.sequence(plan.blocks, Random(seed))
+        }
+        val steps = when (kind) {
+            Kind.CALIBRATION -> Plans.calibration(plan)
+            Kind.AIR -> Plans.air(seq, plan)
+            else -> Plans.keys(seq, plan)
+        }
         val spec = RecordingSpec(kind, posture, rewear, app.prefs.magnet, app.prefs.distanceMm, note, seed, seq, plan)
         _ui.value = Ui(phase = Phase.STARTING, kind = kind, trials = seq.size)
         val ok = app.recorder.start(spec) { id ->
@@ -124,6 +132,23 @@ class Session(private val app: App) {
                 app.cues.press()
                 app.cues.say("Slowly turn the hand in all directions")
                 _ui.value = _ui.value.copy(phase = Phase.ROTATE, phaseEndsAt = now + plan.rotateMs)
+            }
+            "air_start" -> {
+                rec.event("air_start")
+                app.cues.press()
+                app.cues.say("Move the thumb in the air above the fingers. Do not touch them.")
+                _ui.value = _ui.value.copy(phase = Phase.AIR, phaseEndsAt = now + plan.airMs)
+            }
+            "air_end" -> {
+                rec.event("air_end")
+                app.cues.release()
+                app.cues.say("Stop. Now one quick tap on each key you hear.")
+                _ui.value = _ui.value.copy(phase = Phase.LEAD, phaseEndsAt = now + 3000)
+            }
+            "tap_cue" -> {
+                rec.event("tap_cue", s.trial, s.key)
+                app.cues.sayKey(s.key)
+                _ui.value = _ui.value.copy(phase = Phase.TAP, key = s.key, trial = s.trial)
             }
             "calib_end" -> {
                 rec.event("calib_end")
