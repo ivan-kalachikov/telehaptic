@@ -37,6 +37,39 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
 
     fun ownedBy(who: Any) = owner === who
 
+    // Jolt of a touch: high-passed acceleration (each sample minus the mean of the 8 before it, as
+    // the analysis's 40 ms moving average), kept for the last second. Cleared around motor pulses:
+    // the motor shakes the capsule far harder than a touch.
+    private val accWin = ArrayDeque<DoubleArray>()
+    private val joltT = LongArray(JOLT_HIST)
+    private val joltV = DoubleArray(JOLT_HIST)
+    private var joltHead = 0
+    private var joltSize = 0
+    @Volatile var rejectedNoJolt = 0; private set
+
+    private fun noteAcc(tNs: Long, a: DoubleArray) {
+        if (accWin.size >= ACC_MEAN_N) {
+            var s = 0.0
+            for (i in 0..2) { var m = 0.0; for (v in accWin) m += v[i]; m /= accWin.size; s += (a[i] - m) * (a[i] - m) }
+            joltT[joltHead] = tNs; joltV[joltHead] = sqrt(s)
+            joltHead = (joltHead + 1) % JOLT_HIST
+            if (joltSize < JOLT_HIST) joltSize++
+        }
+        accWin.addLast(a)
+        while (accWin.size > ACC_MEAN_N) accWin.removeFirst()
+    }
+
+    /** Largest jolt (m/s²) since [fromNs]; null if there is no accelerometer data for that time. */
+    private fun joltSince(fromNs: Long): Double? {
+        var best: Double? = null
+        for (j in 0 until joltSize) {
+            val i = (joltHead - 1 - j + JOLT_HIST) % JOLT_HIST
+            if (joltT[i] < fromNs) break
+            best = maxOf(best ?: 0.0, joltV[i])
+        }
+        return best
+    }
+
     private val histT = LongArray(HIST)
     private val histX = Array(HIST) { DoubleArray(6) }
     private var head = 0
@@ -61,11 +94,16 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
             if (size < HIST) size++
             if (mode == Mode.OFF) continue
             // The motor's own field and shaking would disturb the plateau and the gyro gate: skip those samples.
-            if (s.motor()) { motorQuietUntilNs = tNs[k] + MOTOR_RING_NS; continue }
+            if (s.motor()) { motorQuietUntilNs = tNs[k] + MOTOR_RING_NS; accWin.clear(); joltSize = 0; continue }
             if (tNs[k] < motorQuietUntilNs) continue
             val g = DoubleArray(3) { s.gyr[it] * capsule.info.gyrMdpsPerLsb / 1000.0 }
             val gyro = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
+            if (capsule.info.imu) noteAcc(tNs[k], DoubleArray(3) { s.acc[it] * capsule.info.accMgPerLsb / 1000.0 * G })
             val ev = segmenter.add(tNs[k], x.copyOf(), twoSensors, gyro) ?: continue
+            // A thumb that only stops in the air, near the fingers, also makes a settled plateau.
+            // A real quick tap jolts the capsule: without a jolt the field must move twice as far.
+            val jolt = if (capsule.info.imu) joltSince(ev.tNs - JOLT_BEFORE_NS) else null
+            if (!joltGate(jolt, segmenter.lastDeviation, segmenter.p.onUt)) { rejectedNoJolt++; segmenter.cancelTouch(); continue }
             val res = if (mode == Mode.TYPING) model?.classify(ev.x) else null
             val d = Detected(ev.tNs, ev.x, res)
             main.post { onTouch?.invoke(d) }
@@ -100,5 +138,19 @@ class Engine(private val capsule: Capsule) : Capsule.Listener {
     companion object {
         const val HIST = 2000  // 10 s at 200 Hz
         const val MOTOR_RING_NS = 100_000_000L
+
+        const val G = 9.80665
+        const val ACC_MEAN_N = 8              // 40 ms at 200 Hz
+        const val JOLT_HIST = 400             // 2 s at 200 Hz
+        /** The jolt is looked for from this long before the plateau: the rise to it takes about 0.3 s (median, first training). */
+        const val JOLT_BEFORE_NS = 600_000_000L
+        /**
+         * m/s². First training (TRAIN_20261120-144944): 17 of 23 quick taps reached it in the
+         * analysis's 0.4 s contact window, and 14% of same-length windows of a free thumb in the air.
+         */
+        const val JOLT_MS2 = 0.5
+
+        /** A touch counts with a jolt, or without one if the field moved at least twice the threshold. No IMU data: no gate. */
+        fun joltGate(jolt: Double?, deviationUt: Double, onUt: Double) = jolt == null || jolt >= JOLT_MS2 || deviationUt >= 2 * onUt
     }
 }

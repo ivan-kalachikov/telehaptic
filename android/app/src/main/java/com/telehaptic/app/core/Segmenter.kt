@@ -69,6 +69,9 @@ class Segmenter(var p: Params = Params()) {
     /** Sets rest explicitly (training measures it). */
     fun setRest(y: DoubleArray) { rest = y.copyOf() }
 
+    /** The last touch was not taken (no jolt): back to rest, so a real tap on the same spot still counts. */
+    fun cancelTouch() { state = State.REST; plateau = null }
+
     fun reset() {
         bufX.clear(); bufY.clear(); bufT.clear()
         state = State.REST; stableSince = -1; stableRef = null; plateau = null; emitted = false
