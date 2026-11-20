@@ -2,6 +2,9 @@ name: Build
 
 on:
   push:
+    # Recordings uploaded by the app change nothing that is built.
+    paths-ignore:
+      - 'data/**'
   workflow_dispatch:
 
 permissions:
@@ -99,6 +102,10 @@ jobs:
   release:
     needs: [firmware, android]
     runs-on: ubuntu-latest
+    # One release at a time: two runs deleting and creating "latest" together fail with HTTP 422.
+    concurrency:
+      group: release-latest
+      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@v4
         with:
