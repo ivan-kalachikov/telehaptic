@@ -122,7 +122,9 @@ class TypingController(private val app: App) {
             if (app.capsule.ui.value.status == Capsule.Status.CONNECTED) app.cues.say("Typing. Hand relaxed, thumb away from the fingers for a second.")
         }
         if (test) {
-            phraseList = PHRASES.shuffled().take(TEST_PHRASES)
+            val from = app.prefs.phraseRound * TEST_PHRASES
+            app.prefs.phraseRound = app.prefs.phraseRound + 1
+            phraseList = List(TEST_PHRASES) { PHRASES[(from + it) % PHRASES.size] }
             phraseIndex = 0
             main.postDelayed({ if (test && active) askPhrase() }, 3500)
         }
@@ -277,11 +279,21 @@ class TypingController(private val app: App) {
         const val REJECT_MS = 200
         const val TEST_PHRASES = 6
 
-        /** Short everyday phrases; every word is in the word list. */
+        /**
+         * Everyday phrases chosen for learning: every word is in the word list, keys are spread evenly
+         * (more of 3, 6, 9, 2 and 5, the keys mixed up most) and as many key-to-key moves as possible
+         * occur. Picked greedily from a larger pool (analysis/phrases.py). Tests go through the list in
+         * order, so six tests type each phrase once.
+         */
         val PHRASES = listOf(
-            "hello how are you", "see you later", "thank you very much", "i am on my way",
-            "call me when you can", "what time is it", "good morning", "where are you now",
-            "i will be there soon", "have a nice day", "how was your day", "let me know",
+            "my favorite color is yellow", "which one do you like", "happy birthday to you", "exactly six weeks",
+            "bring some milk please", "let us grab a drink", "take an umbrella", "fill the water jug", "maybe next week",
+            "zero waste kitchen", "it is very cold outside", "type the next word", "play some jazz", "who is coming tonight",
+            "my phone is almost dead", "fix the broken window", "thank you very much", "congrats on the new job",
+            "wear a warm jacket", "it will rain later", "miss you already", "turn off the lights",
+            "the weather is lovely today", "join us for lunch", "do you want pizza", "buy some fresh bread",
+            "we will walk back", "i forgot my keys", "where should we meet", "the wifi is down", "a lazy sunday",
+            "what is the address", "the sky is blue", "my battery is low", "eggs for breakfast", "the train is delayed",
         )
     }
 
