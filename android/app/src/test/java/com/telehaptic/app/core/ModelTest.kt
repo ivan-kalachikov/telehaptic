@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.telehaptic.app.TypingController
+import java.io.File
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -174,5 +176,12 @@ class ModelTest {
         assertEquals(listOf("ugh", "the"), type(tenTimes, mapOf("4" to 1.0)).candidates())
         // The model hesitates between 4 and 3: now ten times as common is enough.
         assertEquals(listOf("the", "ugh"), type(tenTimes, mapOf("4" to 0.6, "3" to 0.4)).candidates())
+    }
+
+    @Test fun testPhrasesUseOnlyListedWords() {
+        val words = File("src/main/assets/en_words.txt").readLines().map { it.substringBefore(' ') }.toSet()
+        val missing = TypingController.PHRASES.flatMap { it.split(' ') }.filter { it !in words }
+        assertTrue("words missing from the list: $missing", missing.isEmpty())
+        assertEquals("no phrase twice", TypingController.PHRASES.size, TypingController.PHRASES.toSet().size)
     }
 }

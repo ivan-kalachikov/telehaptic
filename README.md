@@ -19,7 +19,7 @@ The difference of the two sensors' readings largely cancels the uniform Earth fi
 |---|---|
 | `firmware/telehaptic/` | capsule firmware: Seeed XIAO nRF52840 Sense, core "Seeed nRF52 Boards" |
 | `android/` | app: capsule link, training, typing with T9, experiments, diagnostics |
-| `analysis/` | analysis of recordings: `python analysis/analyze.py data` → `report/report.md` |
+| `analysis/` | analysis of recordings: `python analysis/analyze.py data` → `report/report.md`; typing-test phrases: `python analysis/phrases.py` |
 | `data/` | recordings |
 | `docs/protocol.md` | BLE service, packets, commands |
 | `docs/build-day.md` | build day checklist |
