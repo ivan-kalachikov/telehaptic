@@ -104,7 +104,7 @@ class TypingController(private val app: App) {
         phraseTouches.clear()
         phraseOpen = true
         if (recording) app.recorder.event("phrase", phraseIndex, p)
-        app.cues.say("Type: $p. Then full stop.")
+        app.cues.say(if (p == KEYS_ITEM) "Last one: star three times, space, hash three times. Then full stop." else "Type: $p. Then full stop.")
         _ui.update { it.copy(target = p, phrase = phraseIndex + 1, phrases = phraseList.size, testDone = false) }
     }
 
@@ -171,7 +171,7 @@ class TypingController(private val app: App) {
         if (test) {
             val from = app.prefs.phraseRound * TEST_PHRASES
             app.prefs.phraseRound = app.prefs.phraseRound + 1
-            phraseList = List(TEST_PHRASES) { PHRASES[(from + it) % PHRASES.size] }
+            phraseList = List(TEST_PHRASES) { PHRASES[(from + it) % PHRASES.size] } + KEYS_ITEM
             phraseIndex = 0
             main.postDelayed({ if (test && active) askPhrase() }, 3500)
         }
@@ -326,6 +326,9 @@ class TypingController(private val app: App) {
     companion object {
         const val REJECT_MS = 200
         const val TEST_PHRASES = 6
+
+        /** The test's last item: the erase and next keys, which no phrase has, so learning sees them too. */
+        const val KEYS_ITEM = "*** ###"
 
         /**
          * Everyday phrases chosen for learning: every word is in the word list, keys are spread evenly

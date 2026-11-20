@@ -188,6 +188,7 @@ class ModelTest {
     @Test fun phraseKeys() {
         assertEquals(listOf("4", "4", "0", "9", "6", "8", "1"), PhraseLearning.keysOf("hi you"))
         assertEquals(null, PhraseLearning.keysOf("hi 2"))
+        assertEquals(listOf("*", "*", "*", "0", "#", "#", "#", "1"), PhraseLearning.keysOf(TypingController.KEYS_ITEM))
     }
 
     @Test fun alignmentSkipsExtraTouchesAndMissedKeys() {

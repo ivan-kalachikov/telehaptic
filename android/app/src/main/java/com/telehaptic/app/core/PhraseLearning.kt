@@ -25,11 +25,13 @@ object PhraseLearning {
     /** ln of the chance of an extra touch, and of a key with no touch (both ~15% in the first tests: 15 of 155, 24 of 164). */
     val SKIP = ln(0.15)
 
-    /** Keys for a phrase: letters as T9 keys, 0 between words, 1 (full stop) at the end. Null if a letter has no key. */
+    /** Keys for a phrase: letters as T9 keys, * and # as themselves, 0 between words, 1 (full stop) at the end. Null if a letter has no key. */
     fun keysOf(phrase: String): List<String>? {
         val out = ArrayList<String>()
         for ((i, w) in phrase.trim().split(Regex("\\s+")).withIndex()) {
             if (i > 0) out.add("0")
+            // "***" and "###": the erase and next keys themselves (the test's last item)
+            if (w.all { it == '*' || it == '#' }) { for (c in w) out.add(c.toString()); continue }
             for (c in T9.code(w) ?: return null) out.add(c.toString())
         }
         out.add("1")
