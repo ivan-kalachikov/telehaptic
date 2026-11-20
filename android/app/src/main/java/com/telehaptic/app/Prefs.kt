@@ -12,7 +12,7 @@ class Prefs(ctx: Context) {
     var detailed: Boolean
         get() = p.getBoolean("detailed", false)
         set(v) = p.edit().putBoolean("detailed", v).apply()
-    /** "4x1.5", "5x3", "8x2" or "" if not chosen yet. */
+    /** A code from [MAGNETS] ("5x3", "8x2+8x2", …) or "" if not chosen yet. */
     var magnet: String
         get() = p.getString("magnet", "") ?: ""
         set(v) = p.edit().putString("magnet", v).apply()
@@ -42,7 +42,11 @@ class Prefs(ctx: Context) {
         set(v) = p.edit().putBoolean("auto_upload", v).apply()
 
     companion object {
-        val MAGNETS = listOf("4x1.5" to "disc 4×1.5 mm", "5x3" to "cylinder 5×3 mm", "8x2" to "disc 8×2 mm")
+        /** Only a label for the recordings: which magnet was on the nail. Stacks are glued one on another, same pole up. */
+        val MAGNETS = listOf(
+            "4x1.5" to "disc 4×1.5 mm", "5x3" to "cylinder 5×3 mm", "8x2" to "disc 8×2 mm",
+            "5x3+5x3" to "two 5×3 stacked", "8x2+8x2" to "two 8×2 stacked", "8x2+5x3" to "8×2 with 5×3 on top",
+        )
         fun magnetTitle(code: String) = MAGNETS.firstOrNull { it.first == code }?.second ?: "not chosen"
     }
 }
